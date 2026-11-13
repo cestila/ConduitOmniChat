@@ -124,7 +124,7 @@ conduitd plugin list
 conduitd plugin remove <id>
 ```
 
-- An official `id` (`whatsapp`, `telegram`, `discord`) maps to
+- An official `id` (`whatsapp`, `telegram`) maps to
   `github.com/cestila/conduit-plugin-<id>`. `owner/repo` installs a third-party
   repository, whose name must be `conduit-plugin-<id>`.
 - The desktop app's Plugins panel installs **official** plugins through the

@@ -169,7 +169,7 @@ func TestInstallChecksumMismatchKeepsPrevious(t *testing.T) {
 	if err := os.WriteFile(old, []byte("OLD"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := in.Install(t.Context(), "discord", "")
+	_, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", "")
 	if err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("esperaba error de checksum: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestInstallMissingChecksumLine(t *testing.T) {
 		archive: makeTarGz(t, entry{name: "conduit-plugin-discord", body: "NEW"})}
 	f.checksums = func(string, []byte) string { return sum([]byte("x")) + "  other_file.tar.gz\n" }
 	in := f.start()
-	_, err := in.Install(t.Context(), "discord", "")
+	_, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", "")
 	if err == nil || !strings.Contains(err.Error(), "checksums.txt") {
 		t.Fatalf("esperaba error de línea faltante: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestInstallMissingPlatformAsset(t *testing.T) {
 	f := &fakeRelease{t: t, repo: "cestila/conduit-plugin-discord", tag: "v1.0.0", noAsset: true, assetName: "x"}
 	in := f.start()
 	in.GOOS, in.GOARCH = "plan9", "mips"
-	_, err := in.Install(t.Context(), "discord", "")
+	_, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", "")
 	if err == nil || !strings.Contains(err.Error(), "plan9") || !strings.Contains(err.Error(), "mips") {
 		t.Fatalf("el error debe nombrar os/arch: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestInstallArchiveWithoutBinary(t *testing.T) {
 	f := &fakeRelease{t: t, repo: "cestila/conduit-plugin-discord", tag: "v1.0.0",
 		archive: makeTarGz(t, entry{name: "README.md", body: "hi"})}
 	in := f.start()
-	_, err := in.Install(t.Context(), "discord", "")
+	_, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", "")
 	if err == nil || !strings.Contains(err.Error(), "conduit-plugin-discord") {
 		t.Fatalf("esperaba error de binario ausente: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestInstallRejectsUnsafeEntries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeRelease{t: t, repo: "cestila/conduit-plugin-discord", tag: "v1.0.0", archive: makeTarGz(t, entries...)}
 			in := f.start()
-			if _, err := in.Install(t.Context(), "discord", ""); err == nil {
+			if _, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", ""); err == nil {
 				t.Fatal("esperaba error")
 			}
 			if n := dirNames(t, in.PluginDir); len(n) != 0 {
@@ -260,7 +260,7 @@ func TestResolveInvalidSpecs(t *testing.T) {
 
 func TestInstallRejectsBadVersion(t *testing.T) {
 	in := New(t.TempDir())
-	if _, err := in.Install(t.Context(), "discord", "../../x"); err == nil {
+	if _, err := in.Install(t.Context(), "cestila/conduit-plugin-discord", "../../x"); err == nil {
 		t.Fatal("versión inválida debe fallar")
 	}
 }

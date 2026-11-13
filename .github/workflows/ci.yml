@@ -49,7 +49,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: make proto
       - name: fail on drift
-        run: git diff --exit-code
+        run: git diff --exit-code -I 'protoc +v[0-9]'
 
   gui:
     runs-on: ubuntu-latest

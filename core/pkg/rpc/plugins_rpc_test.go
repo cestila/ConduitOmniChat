@@ -43,14 +43,16 @@ func TestListPluginsDiscoveredAndCatalog(t *testing.T) {
 	if tg.Repository != "cestila/conduit-plugin-telegram" {
 		t.Fatalf("repositorio: %q", tg.Repository)
 	}
-	for _, id := range []string{"whatsapp", "discord"} {
+	for _, id := range []string{"whatsapp"} {
 		p := got[id]
 		if p == nil || p.IsInstalled || p.IsEnabled || p.Repository != "cestila/conduit-plugin-"+id || p.Manifest != nil {
 			t.Fatalf("%s del catálogo mal listado: %+v", id, p)
 		}
 	}
-	if _, ok := got["gmail"]; ok {
-		t.Fatal("gmail no debe listarse")
+	for _, id := range []string{"gmail", "discord"} {
+		if _, ok := got[id]; ok {
+			t.Fatalf("%s no debe listarse", id)
+		}
 	}
 }
 
@@ -111,14 +113,14 @@ func TestInstallPluginWithoutLoaderOrLoaderFailureNeedsRestart(t *testing.T) {
 			if withLoader {
 				srv.SetPluginLoader(func(context.Context, string) error { return errors.New("no arranca") })
 			}
-			resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "discord"})
+			resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "whatsapp"})
 			if err != nil || !resp.Success {
 				t.Fatalf("resp=%+v err=%v", resp, err)
 			}
 			if !strings.Contains(strings.ToLower(resp.Message), "restart") {
 				t.Fatalf("debe pedir reinicio: %q", resp.Message)
 			}
-			if got := db.GetSetting(context.Background(), "plugin_discord_enabled", ""); got != "true" {
+			if got := db.GetSetting(context.Background(), "plugin_whatsapp_enabled", ""); got != "true" {
 				t.Fatalf("enabled=%q", got)
 			}
 		})
@@ -127,26 +129,26 @@ func TestInstallPluginWithoutLoaderOrLoaderFailureNeedsRestart(t *testing.T) {
 
 func TestInstallPluginFailureLeavesSettingsUnchanged(t *testing.T) {
 	srv, db := newMediaTestServer(t)
-	_ = db.SetSetting(context.Background(), "plugin_discord_enabled", "false")
+	_ = db.SetSetting(context.Background(), "plugin_whatsapp_enabled", "false")
 	srv.SetPluginInstaller(&fakePluginInstaller{err: errors.New("checksum mismatch")})
 	called := false
 	srv.SetPluginLoader(func(context.Context, string) error { called = true; return nil })
-	resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "discord"})
+	resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "whatsapp"})
 	if err != nil || resp.Success || resp.Message != "checksum mismatch" {
 		t.Fatalf("resp=%+v err=%v", resp, err)
 	}
-	if got := db.GetSetting(context.Background(), "plugin_discord_enabled", ""); got != "false" || called {
+	if got := db.GetSetting(context.Background(), "plugin_whatsapp_enabled", ""); got != "false" || called {
 		t.Fatalf("enabled=%q loader=%v", got, called)
 	}
 }
 
 func TestInstallPluginWithoutInstallerFails(t *testing.T) {
 	srv, db := newMediaTestServer(t)
-	resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "discord"})
+	resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "whatsapp"})
 	if err != nil || resp.Success {
 		t.Fatalf("resp=%+v err=%v", resp, err)
 	}
-	if got := db.GetSetting(context.Background(), "plugin_discord_enabled", "unset"); got != "unset" {
+	if got := db.GetSetting(context.Background(), "plugin_whatsapp_enabled", "unset"); got != "unset" {
 		t.Fatalf("enabled=%q", got)
 	}
 }

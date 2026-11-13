@@ -29,7 +29,7 @@ Plugin status:
 | --- | --- |
 | WhatsApp | Working (unofficial client, see disclaimer) |
 | Telegram | Working (your own `api_id`/`api_hash`) |
-| Discord | **Demo only**: accepts credentials but the gateway is simulated; no real connection yet |
+| Discord | **Demo only, not published yet**: accepts credentials but the gateway is simulated |
 
 ## Architecture
 
@@ -44,7 +44,7 @@ Plugin status:
                                                          | gRPC PluginService
                                   +----------------------+-----------------+
                                   |                      |                 |
-                         conduit-plugin-whatsapp  conduit-plugin-telegram  conduit-plugin-discord
+                         conduit-plugin-whatsapp  conduit-plugin-telegram
 ```
 
 More detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -114,9 +114,10 @@ repositories.
 | `docs/` | Documentation |
 
 Official plugins live in their own repositories:
-[whatsapp](https://github.com/cestila/conduit-plugin-whatsapp),
-[telegram](https://github.com/cestila/conduit-plugin-telegram),
-[discord](https://github.com/cestila/conduit-plugin-discord).
+[whatsapp](https://github.com/cestila/conduit-plugin-whatsapp) and
+[telegram](https://github.com/cestila/conduit-plugin-telegram). A Discord plugin
+exists as an unpublished demo and will be released once it talks to the real
+gateway.
 
 ## Writing a plugin
 
