@@ -1,0 +1,97 @@
+{
+  "name": "conduit-gui",
+  "version": "1.0.0",
+  "description": "ConduitOmniChat Portable Multi-Platform GUI Client",
+  "license": "Apache-2.0",
+  "author": "Carlos Estilarte <cestila@gmail.com>",
+  "homepage": "https://github.com/cestila/ConduitOmniChat#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cestila/ConduitOmniChat.git",
+    "directory": "gui"
+  },
+  "main": "main.js",
+  "scripts": {
+    "start": "./start.sh",
+    "test:navigation": "node test/navigation.test.js",
+    "test:identity": "node test/identity.test.js",
+    "test:channel": "node test/channel-selector.test.js",
+    "test:reactions": "node test/reactions-quotes.test.js",
+    "test:polls": "node test/polls.test.js",
+    "test:buttons": "node test/buttons.test.js",
+    "test:rich": "node test/rich-messages.test.js",
+    "test:ui": "node test/ui-improvements-conduitd.test.js",
+    "test:emoji-ux": "node test/emoji-reactions-ux.test.js",
+    "test:daemon": "node test/daemon-manager.test.js",
+    "test:read-receipts": "node test/read-receipts.test.js",
+    "test:search": "node test/search-unified.test.js",
+    "test:forward": "node test/forward-message.test.js",
+    "test:voice": "node test/voice-recorder.test.js",
+    "test:notifications": "node test/notifications.test.js",
+    "test:lightbox": "node test/multimedia-lightbox-carrusel.test.js",
+    "test:telegram-topics": "node test/telegram-topics-navigation.test.js",
+    "test": "node test/navigation.test.js && node test/navigation-order.test.js && node test/telegram-topics-navigation.test.js && node test/identity.test.js && node test/accounts.test.js && node test/provider-registry.test.js && node test/composer-media.test.js && node test/filter-provider.test.js && node test/channel-selector.test.js && node test/reactions-quotes.test.js && node test/polls.test.js && node test/buttons.test.js && node test/rich-messages.test.js && node test/ui-improvements-conduitd.test.js && node test/emoji-reactions-ux.test.js && node test/daemon-manager.test.js && node test/read-receipts.test.js && node test/media-download.test.js && node test/save-attachment.test.js && node test/search-unified.test.js && node test/forward-message.test.js && node test/voice-recorder.test.js && node test/notifications.test.js && node test/multimedia-lightbox-carrusel.test.js",
+    "build:linux": "electron-builder --linux",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder -mwl",
+    "test:accounts": "node test/accounts.test.js",
+    "test:providers": "node test/provider-registry.test.js",
+    "test:composer": "node test/composer-media.test.js",
+    "test:order": "node test/navigation-order.test.js",
+    "test:filter": "node test/filter-provider.test.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.11.3",
+    "@grpc/proto-loader": "^0.7.13",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
+  "build": {
+    "appId": "com.conduit.omnichat.gui",
+    "productName": "Conduit",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "conduit-client.js",
+      "daemon-manager.js",
+      "save-attachment.js",
+      "src/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Network;Chat",
+      "extraResources": [
+        {
+          "from": "../bin/conduitd",
+          "to": "bin/conduitd"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "extraResources": [
+        {
+          "from": "../bin/conduitd.exe",
+          "to": "bin/conduitd.exe"
+        }
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "../sdk/proto/conduit.proto",
+        "to": "proto/conduit.proto"
+      }
+    ]
+  }
+}

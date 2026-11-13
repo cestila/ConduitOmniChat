@@ -1,0 +1,47 @@
+version: 2
+
+project_name: conduitd
+
+builds:
+  - id: conduitd
+    dir: core
+    main: ./cmd/conduitd
+    binary: conduitd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    ids: [conduitd]
+    name_template: "conduitd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    wrap_in_directory: false
+    files:
+      - src: "LICENSE*"
+      - src: "NOTICE*"
+      - src: "README*"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: cestila
+    name: ConduitOmniChat

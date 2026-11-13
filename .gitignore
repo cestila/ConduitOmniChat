@@ -1,0 +1,42 @@
+# Binarios y compilados
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Datos locales y caché
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+cache/
+media/
+
+# Logs y entornos
+*.log
+.env
+.env.local
+
+# IDEs
+.idea/
+.vscode/
+
+# Node / GUI
+node_modules/
+dist/
+
+# Binarios sueltos que deja `go build ./...` en los plugins
+plugins/*/conduit-plugin-*
+plugins/telegram/telegram
+plugins/whatsapp/whatsapp
+plugins/discord/discord
+
+# Binario que deja `go build ./...` en la raíz del módulo TUI
+tui/tui
+
+# Local tooling state
+.atl/
+.codegraph/
+dist-public/

@@ -1,0 +1,825 @@
+syntax = "proto3";
+
+package conduit.v1;
+
+option go_package = "github.com/cestila/ConduitOmniChat/sdk/conduitv1;conduitv1";
+
+// ConduitService es la API principal expuesta por el Core hacia Clientes (TUI/GUI/CLI) y Agentes.
+service ConduitService {
+  // Enviar mensaje hacia cualquier canal o contacto
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // Stream bidireccional / servidor de eventos en tiempo real
+  rpc StreamEvents(StreamEventsRequest) returns (stream EventEnvelope);
+
+  // Listar conversaciones y chats unificados
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+
+  // Obtener historial de mensajes de una conversación
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+
+  // Obtener mensajes fijados de una conversación
+  rpc GetPinnedMessages(GetPinnedMessagesRequest) returns (GetPinnedMessagesResponse);
+
+  // Búsqueda de texto completo con FTS5
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+
+  // Gestión de contactos (Identity Graph)
+  rpc ListContacts(ListContactsRequest) returns (ListContactsResponse);
+  rpc MergeContacts(MergeContactsRequest) returns (MergeContactsResponse);
+  rpc SplitChannel(SplitChannelRequest) returns (SplitChannelResponse);
+
+  // Identidad canónica por email y teléfono (enlace entre proveedores)
+  rpc SetContactIdentity(SetContactIdentityRequest) returns (SetContactIdentityResponse);
+  rpc FindContactsByIdentity(FindContactsByIdentityRequest) returns (FindContactsByIdentityResponse);
+
+  // Gestión Multi-Cuenta (Múltiples cuentas por plataforma)
+  rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+  rpc AddAccount(AddAccountRequest) returns (AddAccountResponse);
+  rpc RemoveAccount(RemoveAccountRequest) returns (RemoveAccountResponse);
+  rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
+  rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
+
+  // Marketplace y Gestión de Plugins
+  rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+  rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
+  rpc TogglePlugin(TogglePluginRequest) returns (TogglePluginResponse);
+
+  // Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+
+  // Estado del Core y Canales
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Reacciones a mensajes
+  rpc SendReaction(SendReactionRequest) returns (SendReactionResponse);
+
+  // Votar en encuestas (Polls)
+  rpc SendVote(SendVoteRequest) returns (SendVoteResponse);
+
+  // Clic en botón interactivo de mensaje
+  rpc ClickButton(ClickButtonRequest) returns (ClickButtonResponse);
+
+  // Edición, Borrado y Fijado de Mensajes
+  rpc EditMessage(EditMessageRequest) returns (EditMessageResponse);
+  rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
+  rpc PinMessage(PinMessageRequest) returns (PinMessageResponse);
+
+  // Confirmación de lectura (Marcar conversación como leída)
+  rpc MarkConversationRead(MarkConversationReadRequest) returns (MarkConversationReadResponse);
+
+  // Descarga a demanda de un adjunto (tocar para descargar / guardar como)
+  rpc DownloadAttachment(DownloadAttachmentRequest) returns (DownloadAttachmentResponse);
+}
+
+// PluginService es la interfaz que cada plugin de canal (Telegram, WhatsApp, etc.) expone al Core.
+service PluginService {
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+  rpc SendOutgoingMessage(OutgoingMessageRequest) returns (OutgoingMessageResponse);
+  rpc StreamIncomingEvents(PluginStreamRequest) returns (stream PluginEvent);
+  rpc SyncChatHistory(SyncChatHistoryRequest) returns (SyncChatHistoryResponse);
+  rpc SendReaction(PluginReactionRequest) returns (PluginReactionResponse);
+  rpc SendVote(PluginVoteRequest) returns (PluginVoteResponse);
+  rpc ClickButton(PluginClickButtonRequest) returns (PluginClickButtonResponse);
+  rpc EditMessage(PluginEditMessageRequest) returns (PluginEditMessageResponse);
+  rpc DeleteMessage(PluginDeleteMessageRequest) returns (PluginDeleteMessageResponse);
+  rpc PinMessage(PluginPinMessageRequest) returns (PluginPinMessageResponse);
+  rpc MarkRead(PluginMarkReadRequest) returns (PluginMarkReadResponse);
+  rpc DownloadMedia(PluginDownloadMediaRequest) returns (PluginDownloadMediaResponse);
+  // GetManifest describes the plugin: identity, credential form, login flows and
+  // UI hints. conduitd calls it right after launch to register the plugin.
+  rpc GetManifest(GetManifestRequest) returns (PluginManifest);
+}
+
+message GetManifestRequest {}
+
+// CredentialFieldKind tells clients which input control to render.
+enum CredentialFieldKind {
+  CREDENTIAL_FIELD_KIND_UNSPECIFIED = 0;
+  CREDENTIAL_FIELD_KIND_TEXT = 1;
+  CREDENTIAL_FIELD_KIND_SECRET = 2;
+  CREDENTIAL_FIELD_KIND_NUMBER = 3;
+  CREDENTIAL_FIELD_KIND_PHONE = 4;
+}
+
+// CredentialField is one input of the "add account" form. key is either the
+// name of a ProviderCredentials field (api_id, bot_token, ...) or a custom
+// key carried in ProviderCredentials.values.
+message CredentialField {
+  string key = 1;
+  string label = 2;
+  CredentialFieldKind kind = 3;
+  bool required = 4;
+  string placeholder = 5;
+  string help = 6;
+}
+
+enum LoginFlow {
+  LOGIN_FLOW_UNSPECIFIED = 0;
+  LOGIN_FLOW_QR = 1;         // the plugin emits channel.auth_qr events
+  LOGIN_FLOW_PHONE_CODE = 2; // phone number plus a code sent by the network
+  LOGIN_FLOW_TOKEN = 3;      // a token entered in the credential form
+}
+
+// PluginManifest is the data a plugin contributes to the UI. Plugins never
+// ship UI code: clients render these fields generically.
+message PluginManifest {
+  string id = 1;                  // lowercase id, also the conversation prefix ("telegram")
+  string display_name = 2;
+  string description = 3;
+  string version = 4;
+  string author = 5;
+  string homepage = 6;
+  Provider provider = 7;
+  string icon = 8;                // Font Awesome class, e.g. "fa-brands fa-telegram"
+  string color = 9;               // CSS color for badges, e.g. "#25D366"
+  repeated CredentialField credential_fields = 10;
+  repeated LoginFlow login_flows = 11;
+  string qr_instructions = 12;    // where to scan the QR in the official app
+  repeated string capabilities = 13;
+  uint32 protocol_version = 14;   // must match the daemon handshake version
+  string credentials_hint = 15;   // help text shown under the credential form
+}
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_WHATSAPP = 1;
+  PROVIDER_TELEGRAM = 2;
+  PROVIDER_DISCORD = 3;
+  PROVIDER_SLACK = 4;
+  PROVIDER_GMAIL = 5;
+}
+
+message ProtoContact {
+  string id = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+  repeated ProtoChannel channels = 4;
+  string email = 5;  // Identidad canónica normalizada (minúsculas)
+  string phone = 6;  // Identidad canónica normalizada (E.164)
+}
+
+message ProtoChannel {
+  string id = 1;
+  string contact_id = 2;
+  Provider provider = 3;
+  string remote_id = 4;
+  string handle = 5;
+  bool is_preferred = 6;
+  string server_id = 7;
+  string parent_channel_id = 8;
+  string channel_type = 9; // 'text', 'voice', 'announcement', 'forum', 'dm', 'group'
+}
+
+message ProtoConversation {
+  string id = 1;
+  string contact_id = 2;
+  bool is_group = 3;
+  string title = 4;
+  int64 last_message_at_unix = 5;
+  string active_channel_id = 6;
+  string last_message_preview = 7;
+  int32 unread_count = 8;
+  string server_id = 9;             // Servidor / Discord Guild / Telegram Supergroup
+  string server_name = 10;          // Nombre del Servidor
+  string parent_channel_id = 11;    // Categoría / Hilo padre
+  string channel_type = 12;         // 'text', 'voice', 'forum', 'announcement', 'dm', 'group'
+  string avatar_url = 13;           // URL de imagen / avatar del contacto o grupo
+  int32 position = 14;              // Orden en que el servidor publica el canal (0 = desconocido)
+  string provider = 15;             // Proveedor del canal activo: 'whatsapp', 'telegram', 'discord'
+}
+
+message ProtoAttachment {
+  string id = 1;
+  string message_id = 2;
+  string file_name = 3;
+  string mime_type = 4;
+  int64 file_size = 5;
+  string local_path = 6;
+  string download_status = 7; // 'remote_only', 'downloading', 'cached', 'failed'
+  string checksum = 8;
+  string url = 9;
+  string remote_ref = 10; // Receta opaca del plugin para descargar el archivo a demanda (no se expone a clientes)
+}
+
+message ProtoReaction {
+  string emoji = 1;
+  int32 count = 2;
+  repeated string senders = 3; // Nombres o identificadores de los remitentes
+  bool includes_me = 4;        // true si el usuario actual reaccionó con este emoji
+}
+
+message ProtoPollOption {
+  string id = 1;              // Índice ("0", "1") o identificador de opción
+  string text = 2;            // Texto visible de la opción
+  int32 vote_count = 3;       // Cantidad de votos acumulados
+  repeated string voters = 4; // Remitentes que votaron por esta opción
+  bool chosen = 5;            // true si el usuario actual votó por esta opción
+}
+
+message ProtoPoll {
+  string question = 1;
+  repeated ProtoPollOption options = 2;
+  int32 selectable_count = 3; // 1 = opción única, >1 = opción múltiple
+  bool is_closed = 4;
+  int32 total_votes = 5;
+  bool is_quiz = 6;
+}
+
+message ProtoButton {
+  string id = 1;        // Identificador del botón (callback_data o button_id)
+  string text = 2;      // Texto visible del botón
+  string type = 3;      // "callback", "url", "quick_reply"
+  string url = 4;       // URL destino (si type == "url")
+}
+
+message ProtoButtonRow {
+  repeated ProtoButton buttons = 1;
+}
+
+message ProtoLocation {
+  double latitude = 1;
+  double longitude = 2;
+  string title = 3;
+  string address = 4;
+}
+
+message ProtoSharedContact {
+  string display_name = 1;
+  string phone_number = 2;
+  string vcard = 3;
+}
+
+message ProtoMessage {
+  string id = 1;
+  string conversation_id = 2;
+  string channel_id = 3;
+  string remote_message_id = 4;
+  string sender_type = 5;
+  string body = 6;
+  string content_type = 7;
+  string status = 8;
+  int64 sent_at_unix = 9;
+  repeated ProtoAttachment attachments = 10;
+  string reply_to_message_id = 11;
+  string reply_to_sender = 12;
+  string reply_to_body = 13;
+  repeated ProtoReaction reactions = 14;
+  ProtoPoll poll = 15;
+  repeated ProtoButtonRow button_rows = 16;
+  bool is_edited = 17;
+  int64 edited_at_unix = 18;
+  bool is_pinned = 19;
+  ProtoLocation location = 20;
+  ProtoSharedContact shared_contact = 21;
+}
+
+// OutgoingAttachment describe un archivo local que el Core debe subir al proveedor.
+// Es distinto de ProtoAttachment, que representa un adjunto ya persistido.
+message OutgoingAttachment {
+  string file_path = 1; // Ruta local absoluta al archivo
+  string file_name = 2; // Opcional: nombre visible; se deriva del path si se omite
+  string mime_type = 3; // Opcional: se infiere por extensión o contenido si se omite
+  int64 file_size = 4;  // Opcional: se deriva del archivo si se omite
+}
+
+message SendMessageRequest {
+  string conversation_id = 1;
+  string target_channel_id = 2; // Opcional: si se omite, usa el sticky channel
+  string body = 3;
+  string reply_to_message_id = 4;
+  repeated OutgoingAttachment attachments = 5; // Opcional: body puede ir vacío si hay adjuntos
+}
+
+message SendMessageResponse {
+  ProtoMessage message = 1;
+}
+
+message StreamEventsRequest {
+  repeated string event_types = 1; // Filtro de eventos opcional
+}
+
+message EventEnvelope {
+  string type = 1;
+  int64 timestamp_unix = 2;
+  oneof payload {
+    ProtoMessage message_received = 3;
+    ProtoMessage message_sent = 4;
+    string channel_status_update = 5;
+    ProtoMessage message_updated = 6;
+    string message_deleted = 7; // ID local del mensaje eliminado
+    ConversationReadEvent conversation_read = 8; // Notificación de conversación / mensajes leídos
+  }
+}
+
+message ConversationReadEvent {
+  string conversation_id = 1;
+  repeated string remote_message_ids = 2;
+  string max_remote_id = 3;
+  int32 unread_count = 4; // No leídos que quedan en la conversación tras aplicar la lectura
+}
+
+message ListConversationsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListConversationsResponse {
+  repeated ProtoConversation conversations = 1;
+}
+
+message GetMessagesRequest {
+  string conversation_id = 1;
+  int32 limit = 2;
+  string before_message_id = 3;
+}
+
+message GetMessagesResponse {
+  repeated ProtoMessage messages = 1;
+}
+
+message GetPinnedMessagesRequest {
+  string conversation_id = 1;
+}
+
+message GetPinnedMessagesResponse {
+  repeated ProtoMessage messages = 1;
+}
+
+message SearchMessagesRequest {
+  string query = 1;
+  int32 limit = 2;
+}
+
+message SearchMessagesResponse {
+  repeated ProtoMessage messages = 1;
+}
+
+message ListContactsRequest {}
+
+message ListContactsResponse {
+  repeated ProtoContact contacts = 1;
+}
+
+message MergeContactsRequest {
+  string primary_contact_id = 1;
+  string secondary_contact_id = 2;
+}
+
+message MergeContactsResponse {
+  ProtoContact merged_contact = 1;
+}
+
+message SplitChannelRequest {
+  string channel_id = 1;
+  string new_contact_name = 2;
+}
+
+message SplitChannelResponse {
+  ProtoContact new_contact = 1;
+}
+
+message SetContactIdentityRequest {
+  string contact_id = 1;
+  string email = 2; // Opcional: vacío deja la identidad existente intacta
+  string phone = 3; // Opcional: vacío deja la identidad existente intacta
+}
+
+message SetContactIdentityResponse {
+  ProtoContact contact = 1;
+}
+
+message FindContactsByIdentityRequest {
+  string query = 1; // Email, teléfono o identificador de canal
+}
+
+message FindContactsByIdentityResponse {
+  repeated ProtoContact contacts = 1;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string core_version = 1;
+  int64 uptime_seconds = 2;
+  map<string, string> channel_statuses = 3;
+}
+
+// ProviderCredentials agrupa las credenciales que cada proveedor real necesita.
+// Los campos que no aplican al proveedor de la cuenta quedan vacíos.
+message ProviderCredentials {
+  string api_id = 1;     // Telegram: ID de aplicación obtenido en my.telegram.org
+  string api_hash = 2;   // Telegram: hash de aplicación
+  string phone = 3;      // Telegram: teléfono de la cuenta en formato E.164
+  string bot_token = 4;  // Discord: token de bot
+  string user_token = 5; // Discord: token de usuario
+  string password = 6;   // Telegram: contraseña de nube (2FA), solo si la cuenta la exige
+  // values carries credentials by key as declared in PluginManifest.credential_fields.
+  // Keys that match a field above are copied into it by conduitd.
+  map<string, string> values = 7;
+}
+
+// Mensajes específicos de Plugins
+message ConnectRequest {
+  string account_identifier = 1;
+  ProviderCredentials credentials = 2;
+}
+
+message ConnectResponse {
+  bool success = 1;
+  string message = 2;
+  bool simulated = 3; // true cuando el plugin todavía no habla con la red real
+  bool pairing = 4;   // true cuando el plugin espera que el usuario complete el emparejamiento (p. ej. escanear un QR)
+}
+
+message DisconnectRequest {}
+
+message DisconnectResponse {
+  bool success = 1;
+}
+
+message OutgoingMessageRequest {
+  string remote_recipient_id = 1;
+  string body = 2;
+  string reply_to_remote_id = 3;
+  repeated OutgoingAttachment attachments = 4; // Archivos locales a subir al proveedor
+  string content_type = 5;                     // Tipo derivado por el Core: 'text', 'image', 'audio', 'video', 'document'
+}
+
+message OutgoingMessageResponse {
+  bool success = 1;
+  string remote_message_id = 2;
+  string error_message = 3;
+}
+
+message SyncChatHistoryRequest {
+  string remote_chat_id = 1;
+  string oldest_remote_message_id = 2;
+  int64 oldest_message_timestamp_unix = 3;
+  bool oldest_message_from_me = 4;
+  int32 limit = 5;
+}
+
+message SyncChatHistoryResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message PluginStreamRequest {}
+
+message PluginEvent {
+  string event_type = 1;
+  string remote_message_id = 2;
+  string remote_sender_id = 3;
+  string body = 4;
+  int64 sent_at_unix = 5;
+  string sender_name = 6;
+  string server_id = 7;             // ID del servidor / Guild / Supergroup
+  string server_name = 8;           // Nombre del servidor (Discord Guild / Comunidad)
+  string parent_channel_id = 9;     // Categoría de canal
+  string channel_type = 10;         // 'text', 'voice', 'announcement', 'forum', 'dm', 'group'
+  string channel_name = 11;         // Nombre específico del canal (ej. #general)
+  string chat_jid = 12;             // ID del chat contenedor (para grupos WhatsApp @g.us o canales)
+  string participant_id = 13;       // ID del remitente real dentro de un grupo
+  string avatar_url = 14;           // URL de imagen de perfil / avatar
+  string content_type = 15;         // 'text', 'image', 'audio', 'video', 'document'
+  repeated ProtoAttachment attachments = 16;
+  bool simulated = 17;              // true cuando el evento proviene de una sincronización simulada
+  string identity_phone = 18;       // Teléfono canónico E.164 que el proveedor conoce del contacto
+  string identity_email = 19;       // Email canónico que el proveedor conoce del contacto
+  string reply_to_remote_id = 20;   // ID del mensaje remoto citado / respondido
+  string reaction_emoji = 21;       // Emoji de la reacción (cuando event_type = "message.reaction")
+  bool reaction_removed = 22;       // true si se removió la reacción
+  ProtoPoll poll = 23;              // Datos de la encuesta (cuando content_type = "poll" o evento de votación)
+  repeated ProtoButtonRow button_rows = 24; // Botonera interactiva o teclado en línea (Telegram/WhatsApp)
+  bool is_edited = 25;              // true si el mensaje fue editado
+  int64 edited_at_unix = 26;        // Timestamp de edición
+  bool is_pinned = 27;              // true si el mensaje está fijado
+  ProtoLocation location = 28;      // Geolocalización
+  ProtoSharedContact shared_contact = 29; // Tarjeta de contacto compartida
+}
+
+// Modelos y Mensajes de Cuentas Múltiples
+message ProtoAccount {
+  string id = 1;
+  Provider provider = 2;
+  string label = 3;
+  string identifier = 4;
+  string status = 5; // 'disconnected', 'pairing', 'connected', 'demo', 'error'
+  string qr_code = 6; // Opcional si está en estado pairing
+  ProviderCredentials credentials = 7; // Credenciales del proveedor (pueden estar incompletas)
+  string status_message = 8; // Motivo visible cuando status es 'demo' o 'error'
+}
+
+message ListAccountsRequest {}
+
+message ListAccountsResponse {
+  repeated ProtoAccount accounts = 1;
+}
+
+message AddAccountRequest {
+  Provider provider = 1;
+  string label = 2;
+  string identifier = 3;
+  ProviderCredentials credentials = 4;
+}
+
+message AddAccountResponse {
+  ProtoAccount account = 1;
+}
+
+message RemoveAccountRequest {
+  string account_id = 1;
+}
+
+message RemoveAccountResponse {
+  bool success = 1;
+}
+
+message ConnectAccountRequest {
+  string account_id = 1;
+}
+
+message ConnectAccountResponse {
+  ProtoAccount account = 1;
+}
+
+message DisconnectAccountRequest {
+  string account_id = 1;
+}
+
+message DisconnectAccountResponse {
+  bool success = 1;
+}
+
+// Modelos y Mensajes de Plugins y Marketplace
+message ProtoPluginInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string version = 4;
+  string author = 5;
+  bool is_installed = 6;
+  bool is_enabled = 7;
+  PluginManifest manifest = 8; // set when the plugin is installed and running
+  string repository = 9;       // GitHub owner/repo used by the installer
+  string path = 10;            // binary path when installed
+}
+
+message ListPluginsRequest {}
+
+message ListPluginsResponse {
+  repeated ProtoPluginInfo plugins = 1;
+}
+
+message InstallPluginRequest {
+  string plugin_id = 1;
+}
+
+message InstallPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message TogglePluginRequest {
+  string plugin_id = 1;
+  bool enable = 2;
+}
+
+message TogglePluginResponse {
+  bool success = 1;
+}
+
+// Configuración Global de la Aplicación (Copiada e integrada de Telegram, Discord y ZapZap)
+message AppSettings {
+  // General & Localización
+  string language = 1;                    // ej. 'es', 'en', 'pt'
+  string timezone = 2;                    // ej. 'America/Argentina/Buenos_Aires', 'UTC'
+  string theme = 3;                       // 'dark' (Discord), 'telegram' (Midnight), 'light'
+  
+  // Notificaciones & Alertas (Discord + ZapZap + Telegram)
+  bool notifications_enabled = 4;         // Notificaciones de escritorio
+  bool notify_preview = 5;                // Mostrar remitente y vista previa del mensaje
+  bool notify_sound = 6;                  // Sonido al recibir mensaje
+  bool notify_flash_taskbar = 7;          // Parpadear ventana / icono en barra de tareas
+  bool show_unread_badge = 8;             // Contador de no leídos en badge / tray
+  
+  // Corrector Ortográfico (Spellcheck) (ZapZap + Telegram + Chromium)
+  bool spellcheck_enabled = 9;            // Activar/desactivar corrector ortográfico
+  string spellcheck_language = 10;        // 'es-ES', 'es-419', 'en-US', 'pt-BR'
+  
+  // Multimedia & Descargas (Telegram Auto-Download + ZapZap)
+  bool auto_download_media = 11;          // Descargar fotos y audio automáticamente
+  bool auto_download_documents = 12;      // Descargar documentos y archivos pesados
+  string download_directory = 13;         // Carpeta de descargas predeterminada
+  
+  // Apariencia y Accesibilidad (Discord + Telegram UI)
+  int32 message_font_size = 14;           // Tamaño de fuente de mensajes (ej. 14, 16, 18)
+  bool compact_message_mode = 15;         // Modo compacto estilo Discord / IRC
+  bool enable_markdown = 16;              // Renderizado de Markdown y bloques de código
+  
+  // Sistema & Rendimiento (ZapZap / Discord Native Desktop)
+  bool minimize_to_tray = 17;             // Minimizar a la bandeja del sistema en lugar de cerrar
+  bool start_minimized = 18;              // Iniciar minimizado junto con el sistema operativo
+  bool hardware_acceleration = 19;        // Aceleración por hardware GPU
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  AppSettings settings = 1;
+}
+
+message UpdateSettingsRequest {
+  AppSettings settings = 1;
+}
+
+message UpdateSettingsResponse {
+  AppSettings settings = 1;
+}
+
+// Reacciones a Mensajes
+message SendReactionRequest {
+  string message_id = 1;
+  string emoji = 2; // Emoji deseado; si coincide con la reacción previa o va vacío, se alterna/remueve
+}
+
+message SendReactionResponse {
+  bool success = 1;
+  repeated ProtoReaction reactions = 2;
+}
+
+message PluginReactionRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+  string emoji = 3; // Emoji o vacío para remover
+}
+
+message PluginReactionResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Encuestas (Polls)
+message SendVoteRequest {
+  string message_id = 1;
+  repeated string selected_options = 2; // IDs o textos de las opciones seleccionadas
+}
+
+message SendVoteResponse {
+  bool success = 1;
+  ProtoPoll poll = 2;
+}
+
+message PluginVoteRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+  repeated string selected_options = 3;
+}
+
+message PluginVoteResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Botones Interactivos y Callbacks
+message ClickButtonRequest {
+  string message_id = 1;
+  string button_id = 2;
+  string button_text = 3;
+}
+
+message ClickButtonResponse {
+  bool success = 1;
+  string feedback_message = 2; // Mensaje toast/alert devuelto por el bot
+  bool is_alert = 3;           // true si es popup modal
+  string url = 4;              // URL opcional si redirige
+}
+
+message PluginClickButtonRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+  string button_id = 3;
+  string button_text = 4;
+}
+
+message PluginClickButtonResponse {
+  bool success = 1;
+  string feedback_message = 2;
+  bool is_alert = 3;
+  string url = 4;
+  string error_message = 5;
+}
+
+// Edición, Borrado y Fijado de Mensajes
+message EditMessageRequest {
+  string message_id = 1;
+  string new_body = 2;
+}
+
+message EditMessageResponse {
+  bool success = 1;
+  ProtoMessage message = 2;
+}
+
+message DeleteMessageRequest {
+  string message_id = 1;
+}
+
+message DeleteMessageResponse {
+  bool success = 1;
+}
+
+message PinMessageRequest {
+  string message_id = 1;
+  bool pinned = 2; // true para fijar, false para desfijar
+}
+
+message PinMessageResponse {
+  bool success = 1;
+  bool is_pinned = 2;
+}
+
+message PluginEditMessageRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+  string new_body = 3;
+}
+
+message PluginEditMessageResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message PluginDeleteMessageRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+}
+
+message PluginDeleteMessageResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message PluginPinMessageRequest {
+  string remote_chat_id = 1;
+  string remote_message_id = 2;
+  bool pinned = 3;
+  bool from_me = 4;
+  string participant_id = 5;
+}
+
+message PluginPinMessageResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Confirmaciones de Lectura (Read Receipts)
+message MarkConversationReadRequest {
+  string conversation_id = 1;
+}
+
+message MarkConversationReadResponse {
+  bool success = 1;
+  int32 marked_count = 2;
+}
+
+message PluginMarkReadRequest {
+  string remote_chat_id = 1;
+  repeated string remote_message_ids = 2; // WhatsApp usa IDs de mensajes específicos
+  string max_remote_id = 3;               // Telegram usa max_id para marcar historial
+  string sender_jid = 4;                  // WhatsApp groups require sender JID
+  repeated string remote_sender_ids = 5;  // Paralelo a remote_message_ids: remitente de cada mensaje (grupos de WhatsApp)
+}
+
+message PluginMarkReadResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+
+// Descarga de adjuntos a demanda
+message DownloadAttachmentRequest {
+  string attachment_id = 1;
+  bool wait = 2; // true: espera a que termine la descarga (guardar como); false: responde al iniciarla
+}
+
+message DownloadAttachmentResponse {
+  ProtoAttachment attachment = 1; // Estado actual del adjunto ('downloading', 'cached' o 'failed')
+}
+
+message PluginDownloadMediaRequest {
+  string remote_ref = 1;   // Receta emitida por el mismo plugin en ProtoAttachment.remote_ref
+  string file_name = 2;
+  string mime_type = 3;
+  string attachment_id = 4;
+}
+
+message PluginDownloadMediaResponse {
+  bool success = 1;
+  string local_path = 2;   // Ruta absoluta dentro del directorio de medios del plugin
+  int64 file_size = 3;
+  string error_message = 4;
+}

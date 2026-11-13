@@ -1,0 +1,22 @@
+ConduitOmniChat
+Copyright 2026 Carlos Estilarte
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party software
+--------------------
+ConduitOmniChat depends on third-party software distributed under its own
+licenses. Notable dependencies:
+
+  github.com/hashicorp/go-plugin   MPL-2.0       (plugin transport)
+  modernc.org/sqlite               BSD-3-Clause  (local database)
+  github.com/zalando/go-keyring    MIT           (OS keyring helper)
+  google.golang.org/grpc           Apache-2.0    (RPC)
+  Electron                         MIT           (desktop GUI)
+
+The Mozilla Public License 2.0 is a file-level copyleft license: the MPL-2.0
+files of hashicorp/go-plugin are used here unmodified, and their source is
+available from https://github.com/hashicorp/go-plugin.
+
+See the go.mod and go.sum files and gui/package.json for the full list of
+dependencies; each keeps its own license and copyright notices.

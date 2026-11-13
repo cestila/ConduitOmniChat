@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conduit OmniChat</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="theme-dark">
+  <div class="app-layout">
+    <!-- BARRA LATERAL IZQUIERDA: Servidores / Proveedores / Cuentas (Estilo Discord + ZapZap) -->
+    <nav class="sidebar-providers">
+      <div class="provider-pill active" id="tab-all-convs" title="Todas las Conversaciones">
+        <div class="pill-marker"></div>
+        <div class="provider-icon conduit-logo">
+          <i class="fa-solid fa-bolt"></i>
+        </div>
+      </div>
+      <div class="divider"></div>
+      
+      <!-- Cuentas Multi-Canal -->
+      <div id="accounts-pills" class="accounts-list">
+        <!-- Renderizado dinámicamente -->
+      </div>
+
+      <div class="provider-pill add-account-btn" id="btn-open-accounts" title="Gestionar Cuentas">
+        <div class="provider-icon"><i class="fa-solid fa-plus"></i></div>
+      </div>
+
+      <div class="sidebar-spacer"></div>
+
+      <!-- Contactos Unificados (Identity Graph) -->
+      <div class="provider-pill" id="btn-contacts" title="Contactos Unificados">
+        <div class="provider-icon"><i class="fa-solid fa-users"></i></div>
+      </div>
+
+      <!-- Plugins & Ajustes -->
+      <div class="provider-pill" id="btn-plugins" title="Plugins & Marketplace">
+        <div class="provider-icon"><i class="fa-solid fa-puzzle-piece"></i></div>
+      </div>
+      <div class="provider-pill" id="btn-settings" title="Configuración">
+        <div class="provider-icon"><i class="fa-solid fa-gear"></i></div>
+      </div>
+    </nav>
+
+    <!-- LISTA DE CHATS / CONVERSACIONES (Estilo Telegram Desktop) -->
+    <aside class="sidebar-chats">
+      <div class="chats-header">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="chat-search-input" placeholder="Buscar mensajes o chats (FTS5)..." />
+          <button id="search-clear-btn" class="icon-btn-sm hidden"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </div>
+
+      <!-- Filtros Rápidos Dinámicos (Se pueblan según las cuentas configuradas) -->
+      <div class="chat-filters" id="chat-filters-container">
+        <button class="filter-chip active" data-filter="all">Todos</button>
+      </div>
+
+      <!-- Cabecera de navegación: servidor / supergrupo -> lista de canales -->
+      <div class="server-nav-header hidden" id="server-nav-header">
+        <button class="server-back-btn" id="btn-server-back" title="Volver a todos los chats (Esc)">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
+        <div class="server-nav-title" id="server-nav-title">Servidor</div>
+        <div class="server-nav-count" id="server-nav-count"></div>
+      </div>
+
+      <!-- Lista de Chats -->
+      <div class="conversation-list" id="conversation-list">
+        <div class="loading-state">
+          <i class="fa-solid fa-spinner fa-spin"></i> Conectando a conduitd...
+        </div>
+      </div>
+
+      <!-- Barra de Estado Inferior -->
+      <div class="chats-footer-status">
+        <div class="daemon-indicator" id="daemon-status-indicator" title="Clic para reiniciar conduitd">
+          <span class="status-dot online"></span>
+          <span class="status-text" id="daemon-status-text">Daemon 50051 OK</span>
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button id="btn-refresh-chats" class="icon-btn-sm" title="Refrescar chats"><i class="fa-solid fa-rotate-right"></i></button>
+          <button id="btn-restart-app" class="icon-btn-sm" title="Reiniciar aplicación y demonio"><i class="fa-solid fa-arrows-rotate"></i></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL: Conversación Activa o Vista de Configuración -->
+    <main class="main-content">
+      <!-- VISTA DE CHAT ACTIVO -->
+      <section id="view-chat" class="view-panel active">
+        <header class="chat-header">
+          <div class="chat-header-info">
+            <div class="chat-avatar" id="active-chat-avatar">C</div>
+            <div class="chat-header-details">
+              <h2 id="active-chat-title">Selecciona un chat</h2>
+              <span id="active-chat-subtitle" class="chat-subtitle">Listo para comunicar a través de conduitd</span>
+            </div>
+          </div>
+          <div class="chat-header-actions">
+            <!-- Channel Selector Dropdown (WhatsApp / Telegram / Discord) -->
+            <div class="channel-selector-wrapper" id="channel-selector-wrapper">
+              <label for="channel-select" class="sr-only">Canal de salida</label>
+              <select id="channel-select" class="channel-dropdown" title="Canal de transmisión activo">
+                <option value="">Automático (Sticky)</option>
+              </select>
+            </div>
+            <button class="icon-btn" id="btn-chat-info" title="Detalles del Contacto / Graph"><i class="fa-solid fa-circle-info"></i></button>
+          </div>
+        </header>
+
+        <!-- Barra de Carga Indeterminada para Mensajes y Contactos -->
+        <div id="chat-progress-bar" class="chat-progress-bar hidden">
+          <div class="chat-progress-line"></div>
+        </div>
+
+        <!-- Banner de mensaje fijado en la conversación activa -->
+        <div id="pinned-message-banner" class="pinned-message-banner hidden">
+          <div class="pinned-banner-icon"><i class="fa-solid fa-thumbtack"></i></div>
+          <div class="pinned-banner-content" id="pinned-banner-content" title="Clic para ir al mensaje">
+            <span class="pinned-banner-label">Mensaje fijado</span>
+            <span class="pinned-banner-text" id="pinned-banner-text"></span>
+          </div>
+          <button class="icon-btn-sm" id="btn-unpin-banner" title="Desfijar mensaje"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- Mensajes del Chat -->
+        <div class="messages-container" id="messages-container">
+          <div class="empty-conversation-state">
+            <i class="fa-regular fa-comments empty-icon"></i>
+            <h3>No hay conversación seleccionada</h3>
+            <p>Selecciona una conversación de la lista lateral o espera nuevos mensajes.</p>
+          </div>
+        </div>
+
+        <!-- Botón flotante para ir al último mensaje -->
+        <button id="btn-scroll-bottom" class="btn-scroll-bottom hidden" title="Volver al último mensaje">
+          <i class="fa-solid fa-chevron-down"></i>
+          <span id="scroll-bottom-badge" class="scroll-bottom-badge hidden">0</span>
+        </button>
+
+        <!-- Input de Mensaje (Estilo Discord / Telegram con soporte multilínea) -->
+        <footer class="chat-composer" id="chat-composer">
+          <div class="composer-actions-left">
+            <button class="icon-btn" id="btn-attach-file" title="Adjuntar archivo"><i class="fa-solid fa-paperclip"></i></button>
+            <button class="icon-btn" id="btn-emoji-picker" title="Emoji picker"><i class="fa-regular fa-face-smile"></i></button>
+            <div id="emoji-panel" class="emoji-panel hidden" role="dialog" aria-label="Emoji picker"></div>
+          </div>
+          <div class="composer-input-wrapper">
+            <div id="composer-reply-preview" class="composer-reply-preview hidden">
+              <div class="reply-preview-bar"></div>
+              <div class="reply-preview-content">
+                <div class="reply-preview-sender" id="reply-preview-sender"></div>
+                <div class="reply-preview-text" id="reply-preview-text"></div>
+              </div>
+              <button class="icon-btn btn-cancel-reply" id="btn-cancel-reply" title="Cancelar respuesta"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="composer-edit-preview" class="composer-edit-preview hidden">
+              <div class="edit-preview-bar"></div>
+              <div class="edit-preview-content">
+                <div class="edit-preview-title"><i class="fa-solid fa-pen"></i> Editando mensaje</div>
+                <div class="edit-preview-text" id="edit-preview-text"></div>
+              </div>
+              <button class="icon-btn btn-cancel-edit" id="btn-cancel-edit" title="Cancelar edición"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="composer-attachments" class="composer-attachments hidden"></div>
+            <textarea id="message-input" placeholder="Escribe un mensaje hacia conduitd..."></textarea>
+            <div id="voice-recorder-bar" class="voice-recorder-bar hidden">
+              <div class="voice-recorder-info">
+                <span class="voice-recording-dot"></span>
+                <span class="voice-recorder-label">Grabando nota de voz...</span>
+                <span id="voice-recorder-timer" class="voice-recorder-timer">00:00</span>
+              </div>
+              <div class="voice-recorder-actions">
+                <button type="button" class="btn-voice-cancel" id="btn-voice-cancel" title="Cancelar y descartar grabación">
+                  <i class="fa-solid fa-trash"></i> Cancelar
+                </button>
+                <button type="button" class="btn-voice-send" id="btn-voice-send" title="Detener y enviar nota de voz">
+                  <i class="fa-solid fa-paper-plane"></i> Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="composer-actions-right">
+            <button class="icon-btn btn-record-audio" id="btn-record-audio" title="Grabar nota de voz">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <button class="send-btn" id="btn-send-message" title="Enviar Mensaje">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+        </footer>
+      </section>
+
+      <!-- VISTA DE CUENTAS & PROVEEDORES (Estilo ZapZap Multi-Account) -->
+      <section id="view-accounts" class="view-panel">
+        <header class="panel-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <h2>Gestión Multi-Cuenta de Proveedores</h2>
+            <button class="btn-card btn-primary" id="btn-show-add-account-form"><i class="fa-solid fa-plus"></i> Conectar Nueva Cuenta</button>
+          </div>
+          <button class="icon-btn btn-close-panel" data-close="view-accounts"><i class="fa-solid fa-xmark"></i></button>
+        </header>
+        <div class="panel-body">
+          <!-- Formulario colapsable para agregar cuenta -->
+          <div id="add-account-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
+            <h3>Vincular Nueva Cuenta a conduitd</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:flex-end;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Proveedor</label>
+                <select id="new-account-provider" class="form-input" style="width:100%;"></select>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Nombre / Etiqueta</label>
+                <input type="text" id="new-account-label" class="form-input" placeholder="Ej. Discord Gaming, TG Trabajo" style="width:100%;" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Identificador / Teléfono</label>
+                <input type="text" id="new-account-identifier" class="form-input" placeholder="Ej. +54911..." style="width:100%;" />
+              </div>
+            </div>
+
+            <!-- Campos de credenciales: se generan desde el manifiesto del plugin elegido -->
+            <div id="account-credential-fields" class="credential-fields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px;"></div>
+
+            <p id="account-credential-hint" class="text-muted" style="font-size:12px;margin:8px 0 0;"></p>
+
+            <div style="display:flex;gap:8px;margin-top:12px;">
+              <button class="btn-card btn-primary" id="btn-submit-add-account">Guardar y Conectar</button>
+              <button class="btn-card" id="btn-cancel-add-account" style="background:#3f4147;color:white;">Cancelar</button>
+            </div>
+          </div>
+
+          <div class="accounts-grid" id="accounts-grid">
+            <!-- Renderizado dinámicamente -->
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA DE CONTACTOS UNIFICADOS (Identity Graph) -->
+      <section id="view-contacts" class="view-panel">
+        <header class="panel-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <h2>Contactos Unificados</h2>
+            <button class="btn-card btn-primary" id="btn-show-merge-modal"><i class="fa-solid fa-code-merge"></i> Unificar Dos Contactos</button>
+            <button class="btn-card" id="btn-show-identity-modal" style="background:#3f4147;color:white;"><i class="fa-solid fa-id-card"></i> Definir Email / Teléfono</button>
+            <button class="btn-card" id="btn-show-link-identity-modal" style="background:#3f4147;color:white;"><i class="fa-solid fa-link"></i> Vincular por Email / Teléfono</button>
+          </div>
+          <button class="icon-btn btn-close-panel" data-close="view-contacts"><i class="fa-solid fa-xmark"></i></button>
+        </header>
+        <div class="panel-body">
+          <!-- Cuadro de Fusión de Contactos -->
+          <div id="merge-contacts-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
+            <h3>Unificar Identidades Humanas (Identity Graph)</h3>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+              Combina dos contactos en uno solo. Todos los canales (WhatsApp, Telegram, Discord) del contacto secundario se transferirán al principal. Los grupos y canales de servidores permanecen independientes y no se fusionan.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:flex-end;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Principal (Destino)</label>
+                <select id="merge-primary-select" class="form-input" style="width:100%;">
+                  <!-- Opciones cargadas dinámicamente -->
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Secundario (A fusionar)</label>
+                <select id="merge-secondary-select" class="form-input" style="width:100%;">
+                  <!-- Opciones cargadas dinámicamente -->
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-card btn-primary" id="btn-submit-merge">Confirmar Fusión</button>
+                <button class="btn-card" id="btn-cancel-merge" style="background:#3f4147;color:white;">Cancelar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cuadro de Identidad Canónica (email / teléfono) -->
+          <div id="identity-set-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
+            <h3>Definir Email y Teléfono Canónicos</h3>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+              La identidad canónica es la que enlaza automáticamente a la misma persona entre WhatsApp, Telegram y Discord.
+              Un email o teléfono ya usado por otro contacto se rechaza para no duplicar identidades.
+            </p>
+            <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:12px;align-items:flex-end;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto</label>
+                <select id="identity-contact-select" class="form-input" style="width:100%;">
+                  <!-- Opciones cargadas dinámicamente -->
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Email</label>
+                <input type="text" id="identity-email-input" class="form-input" placeholder="persona@dominio.com" style="width:100%;" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Teléfono</label>
+                <input type="text" id="identity-phone-input" class="form-input" placeholder="+54911..." style="width:100%;" />
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-card btn-primary" id="btn-save-identity">Guardar Identidad</button>
+                <button class="btn-card" id="btn-cancel-identity" style="background:#3f4147;color:white;">Cancelar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cuadro de Vinculación Manual por Identidad -->
+          <div id="identity-link-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
+            <h3>Vincular por Email o Teléfono</h3>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+              Busca el contacto dueño de un email, un teléfono o un identificador de canal y fusíonalo dentro del contacto principal elegido.
+            </p>
+            <div style="display:grid;grid-template-columns:1.6fr 1.4fr auto;gap:12px;align-items:flex-end;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Email, teléfono o identificador</label>
+                <input type="text" id="identity-query-input" class="form-input" placeholder="persona@dominio.com / +54911... / discord-user-1" style="width:100%;" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Principal (Destino)</label>
+                <select id="identity-target-select" class="form-input" style="width:100%;">
+                  <!-- Opciones cargadas dinámicamente -->
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-card btn-primary" id="btn-find-identity">Buscar</button>
+                <button class="btn-card" id="btn-cancel-link-identity" style="background:#3f4147;color:white;">Cancelar</button>
+              </div>
+            </div>
+            <div id="identity-results" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="accounts-grid" id="contacts-grid">
+            <!-- Renderizado dinámicamente -->
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA DE PLUGINS & MARKETPLACE -->
+      <section id="view-plugins" class="view-panel">
+        <header class="panel-header">
+          <h2>Plugins y Extensiones del Core</h2>
+          <button class="icon-btn btn-close-panel" data-close="view-plugins"><i class="fa-solid fa-xmark"></i></button>
+        </header>
+        <div class="panel-body">
+          <div class="plugins-list" id="plugins-list">
+            <!-- Renderizado dinámicamente -->
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA DE CONFIGURACIÓN (Inspirada en Telegram, Discord y ZapZap) -->
+      <section id="view-settings" class="view-panel">
+        <header class="panel-header">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <h2>Ajustes y Preferencias</h2>
+            <button class="btn-card btn-primary" id="btn-save-settings"><i class="fa-solid fa-floppy-disk"></i> Guardar Cambios</button>
+          </div>
+          <button class="icon-btn btn-close-panel" data-close="view-settings"><i class="fa-solid fa-xmark"></i></button>
+        </header>
+        <div class="panel-body settings-container" style="max-width:900px;">
+          <!-- 1. General & Zona Horaria -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-globe"></i> General & Localización</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Idioma de la Aplicación</strong>
+                <p>Idioma principal de la interfaz.</p>
+              </div>
+              <select id="setting-language" class="form-input">
+                <option value="es">Español (Latinoamérica)</option>
+                <option value="en">English (US)</option>
+                <option value="pt">Português (Brasil)</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Zona Horaria</strong>
+                <p>Utilizada para estampar marcas de tiempo en mensajes y chats.</p>
+              </div>
+              <select id="setting-timezone" class="form-input">
+                <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires (UTC-3)</option>
+                <option value="America/Sao_Paulo">America/Sao_Paulo (UTC-3)</option>
+                <option value="America/Santiago">America/Santiago (UTC-4)</option>
+                <option value="America/Bogota">America/Bogota (UTC-5)</option>
+                <option value="America/Mexico_City">America/Mexico_City (UTC-6)</option>
+                <option value="America/New_York">America/New_York (UTC-5)</option>
+                <option value="Europe/Madrid">Europe/Madrid (UTC+1)</option>
+                <option value="UTC">UTC (Universal)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 2. Corrector Ortográfico (Spellcheck - ZapZap / Telegram) -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-spell-check"></i> Corrector Ortográfico (Spellcheck)</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Activar Corrector Ortográfico</strong>
+                <p>Subraya errores tipográficos mientras redactas mensajes.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-spellcheck-enabled" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Diccionario e Idioma del Corrector</strong>
+                <p>Diccionario provisto por el motor Chromium / Hunspell.</p>
+              </div>
+              <select id="setting-spellcheck-language" class="form-input">
+                <option value="es-ES">Español (España / RAE)</option>
+                <option value="es-419">Español (Latinoamérica)</option>
+                <option value="en-US">English (United States)</option>
+                <option value="pt-BR">Português (Brasil)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 3. Notificaciones & Alertas (Discord + ZapZap) -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-bell"></i> Notificaciones y Sonidos</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Notificaciones de Escritorio</strong>
+                <p>Mostrar avisos emergentes cuando lleguen mensajes nuevos.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-notifications-enabled" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Vista Previa del Mensaje</strong>
+                <p>Incluir remitente y texto del mensaje en la notificación emergente.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-notify-preview" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Sonido de Alerta</strong>
+                <p>Reproducir un tono suave al recibir un mensaje.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-notify-sound" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Parpadear Icono en Barra de Tareas</strong>
+                <p>Destellar en la barra de tareas cuando hay actividad pendiente.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-notify-flash" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Contador en Bandeja de Sistema</strong>
+                <p>Mostrar insignia con número de mensajes sin leer.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-show-badge" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 4. Apariencia & Mensajería (Discord / Telegram UI) -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-palette"></i> Apariencia & Chat</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Tema Visual</strong>
+                <p>Paleta de colores de la interfaz de usuario (4 oscuros y 4 claros).</p>
+              </div>
+              <select id="setting-theme" class="form-input">
+                <optgroup label="Temas Oscuros (Dark)">
+                  <option value="dark">Discord Dark (Predeterminado)</option>
+                  <option value="telegram">Telegram Midnight Blue</option>
+                  <option value="oled">OLED Pure Black (Matrix / Minimal)</option>
+                  <option value="nord">Nord Polar Night</option>
+                </optgroup>
+                <optgroup label="Temas Claros (Light)">
+                  <option value="light">Claro Estándar (Clean Light)</option>
+                  <option value="solarized-light">Papel Cálido / Solarized Sepia</option>
+                  <option value="sky">Telegram Day (Sky Blue)</option>
+                  <option value="mint">WhatsApp Light (Mint & Green)</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Tamaño de Fuente del Chat</strong>
+                <p>Tamaño del texto de los mensajes en píxeles.</p>
+              </div>
+              <select id="setting-font-size" class="form-input">
+                <option value="13">13px (Compacto)</option>
+                <option value="15">15px (Estándar)</option>
+                <option value="17">17px (Mediano / Cómodo)</option>
+                <option value="19">19px (Grande)</option>
+                <option value="21">21px (Muy Grande)</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Modo Compacto de Mensajes</strong>
+                <p>Reduce espaciados y dimensiones al estilo IRC / Discord.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-compact-mode" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Renderizado de Formato Markdown</strong>
+                <p>Interpretar negritas (**texto**), cursivas (*texto*) y bloques de código.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-enable-markdown" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 5. Descargas & Multimedia (Telegram / ZapZap) -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-download"></i> Descargas & Multimedia</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Auto-descargar Fotos y Audios</strong>
+                <p>Descargar automáticamente archivos multimedia entrantes.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-auto-media" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Auto-descargar Documentos</strong>
+                <p>Descargar PDFs y archivos pesados automáticamente.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-auto-docs" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Carpeta de Descargas</strong>
+                <p>Directorio donde se almacenarán los archivos adjuntos.</p>
+              </div>
+              <input type="text" id="setting-download-dir" class="form-input" value="~/Downloads/Conduit" />
+            </div>
+          </div>
+
+          <!-- 6. Sistema & Bandeja (ZapZap / Telegram) -->
+          <div class="settings-group">
+            <h3><i class="fa-solid fa-desktop"></i> Sistema & Rendimiento</h3>
+            <div class="setting-item">
+              <div>
+                <strong>Minimizar a la Bandeja del Sistema</strong>
+                <p>Al cerrar la ventana, mantener la aplicación activa en la bandeja (Tray).</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-minimize-tray" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Iniciar Minimizado</strong>
+                <p>Iniciar la aplicación en segundo plano en la bandeja del sistema.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-start-minimized" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <div>
+                <strong>Aceleración por Hardware (GPU)</strong>
+                <p>Mejora el rendimiento de renderizado en Linux y Windows.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="setting-hardware-accel" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="setting-item" style="border-top:1px solid var(--border-color, #333);margin-top:12px;padding-top:12px;">
+              <div>
+                <strong>Demonio Local (conduitd Sidecar)</strong>
+                <p id="setting-daemon-info-text">Detectando modo de ejecución...</p>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-card btn-secondary" id="btn-setting-restart-daemon" type="button" title="Reiniciar solo el demonio de mensajería">
+                  <i class="fa-solid fa-rotate"></i> Reiniciar Demonio
+                </button>
+                <button class="btn-card btn-primary" id="btn-setting-restart-app" type="button" title="Reiniciar aplicación y demonio">
+                  <i class="fa-solid fa-arrows-rotate"></i> Reiniciar Todo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  <!-- Modal para Reenviar Mensaje -->
+  <div id="forward-modal" class="modal-overlay hidden">
+    <div class="forward-container">
+      <div class="forward-header">
+        <span class="forward-title"><i class="fa-solid fa-share"></i> Reenviar mensaje</span>
+        <button id="forward-btn-close" class="icon-btn" title="Cerrar (Esc)"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="forward-preview" class="forward-preview">
+        <!-- Render dinámico de vista previa -->
+      </div>
+      <div class="forward-search-box">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input type="text" id="forward-search-input" placeholder="Buscar chat o contacto..." autocomplete="off">
+      </div>
+      <div id="forward-conversation-list" class="forward-conversation-list">
+        <!-- Lista de chats destino -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Lightbox para visualización ampliada de Fotos, GIFs y Videos con carrusel -->
+  <div id="media-lightbox-modal" class="modal-overlay hidden">
+    <div class="lightbox-container">
+      <div class="lightbox-header">
+        <div class="lightbox-title-group">
+          <span id="lightbox-filename" class="lightbox-title">Archivo Multimedia</span>
+          <span id="lightbox-counter" class="lightbox-counter"></span>
+        </div>
+        <div class="lightbox-actions">
+          <button id="lightbox-btn-save-as" class="icon-btn" title="Guardar como…">
+            <i class="fa-solid fa-floppy-disk"></i>
+          </button>
+          <button id="lightbox-btn-open-system" class="icon-btn" title="Abrir con visor predeterminado del sistema">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </button>
+          <button id="lightbox-btn-close" class="icon-btn" title="Cerrar (Esc)">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="lightbox-stage">
+        <button id="lightbox-btn-prev" class="lightbox-nav-btn prev" title="Anterior (Flecha izquierda)">
+          <i class="fa-solid fa-chevron-left"></i>
+        </button>
+        <div id="lightbox-content" class="lightbox-body">
+          <!-- Render dinámico: img, video o embed -->
+        </div>
+        <button id="lightbox-btn-next" class="lightbox-nav-btn next" title="Siguiente (Flecha derecha)">
+          <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
