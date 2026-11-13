@@ -24,6 +24,8 @@ listed under an **SDK** heading inside each version.
 
 - The CI proto-drift check ignores the `protoc` version header of generated
   code, which differs between the CI runner and local toolchains.
+- Desktop app artifacts carry the release version: the release workflow sets
+  it from the tag (the 0.1.0 artifacts were labeled 1.0.0).
 
 ## [0.1.0] - 2026-11-13
 

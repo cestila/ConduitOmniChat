@@ -59,6 +59,10 @@ jobs:
           cd core && go build -o ../bin/conduitd.exe ./cmd/conduitd
       - run: npm ci
         working-directory: gui
+      - name: version the app from the release tag
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        working-directory: gui
       - name: package
         run: npx electron-builder ${{ matrix.builder }} --publish never
         working-directory: gui
