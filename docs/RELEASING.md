@@ -116,8 +116,18 @@ release, verify the SHA-256 and place the binary in `<dataDir>/plugins/`.
 
 ## Later releases
 
-- **Only a plugin changed:** commit in the plugin's public repo (or in the
-  monorepo and re-export), tag `vX.Y.Z`, push the tag.
+`main` is protected in every repository: changes land through pull requests
+(squash merge, CI green). A release is also a pull request:
+
+1. Open a PR that moves the **[Unreleased]** entries of `CHANGELOG.md` under a
+   new `## [X.Y.Z] - YYYY-MM-DD` heading, and updates the compare links at the
+   bottom. Title: `chore(release): vX.Y.Z`.
+2. Merge it, then tag the merge commit on `main` and push the tag:
+   `git switch main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z`.
+   Tags are not blocked by branch protection; the release workflow builds and
+   publishes the artifacts.
+
+- **Only a plugin changed:** release the plugin's repository as above.
 - **SDK changed:** release the main repo first and tag `sdk/vX.Y.Z` (and
   `vX.Y.Z` if `conduitd`/GUI changed). Wait for the proxy (step 4). Then in each
   plugin run `go get github.com/cestila/ConduitOmniChat/sdk@vX.Y.Z && go mod tidy`,
