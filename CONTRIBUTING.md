@@ -20,6 +20,7 @@ cd gui && npm ci        # GUI dependencies
 
 ```sh
 make test-go            # go test ./... in sdk and core
+make daemon             # the GUI daemon-manager test needs bin/conduitd
 cd gui && npm test      # GUI tests (plain node scripts)
 ```
 
