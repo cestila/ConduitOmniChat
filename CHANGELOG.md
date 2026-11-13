@@ -14,6 +14,8 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
 ### Changed
 
 - The official plugin catalog no longer offers Discord: its plugin is an
@@ -53,5 +55,6 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.0
