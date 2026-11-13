@@ -6,17 +6,20 @@ Thanks for your interest! Issues and pull requests are welcome.
 
 - Go (version in `core/go.mod`) and Node.js 22 (GUI).
 - `protoc`, `protoc-gen-go` and `protoc-gen-go-grpc` only if you touch the proto.
-- The repository is a Go workspace (`go.work`): `sdk/`, `core/`, plugins.
+- `sdk/` and `core/` are separate Go modules; `core` uses the local `sdk`
+  through a `replace` directive. Plugins live in their own repositories
+  (`cestila/conduit-plugin-<id>`); to run them against a local `conduitd`, build
+  them into `bin/plugins/`.
 
 ```sh
-make build              # build conduitd and the plugins into ./bin
+make build              # build conduitd into ./bin
 cd gui && npm ci        # GUI dependencies
 ```
 
 ## Tests
 
 ```sh
-make test-go            # go test ./... in sdk, core and each plugin
+make test-go            # go test ./... in sdk and core
 cd gui && npm test      # GUI tests (plain node scripts)
 ```
 
@@ -35,13 +38,37 @@ Edit `sdk/proto/conduit.proto` and run `make proto`; commit the regenerated
 code. CI has a proto-drift check that fails if the generated files are stale.
 Protocol-breaking changes must bump `pluginsdk.ProtocolVersion`.
 
-## Commits and pull requests
+## Pull requests
 
-- Use [Conventional Commits](https://www.conventionalcommits.org)
-  (`feat:`, `fix:`, `docs:`, `chore:`, ...).
-- Keep pull requests focused and small enough to review.
-- A DCO sign-off is not required. By contributing you agree your work is
-  licensed under Apache-2.0.
+`main` is protected: nobody pushes to it directly, maintainers included.
 
-New networks: the `Provider` enum is closed, so a new plugin first needs an SDK
+1. Create a branch from `main` (`feat/...`, `fix/...`, `docs/...`).
+2. Open a pull request; the template lists what to check.
+3. CI (`go`, `proto-drift`, `gui`) must pass and the branch must be up to date
+   with `main`; open review conversations must be resolved.
+4. Pull requests are **squash merged**: the PR title becomes the commit
+   message on `main`, so it must follow
+   [Conventional Commits](https://www.conventionalcommits.org)
+   (`feat:`, `fix:`, `docs:`, `chore:`, ...). The branch is deleted after merge.
+
+Keep pull requests focused and small enough to review.
+
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Every pull request with a user-visible change adds a line under
+**[Unreleased]** in the matching section (`Added`, `Changed`, `Deprecated`,
+`Removed`, `Fixed`, `Security`); SDK changes go under an **SDK** heading.
+Changes with no user-visible effect (CI, refactors, tests) need no entry.
+Releases move the entries under the new version (see
+[docs/RELEASING.md](docs/RELEASING.md)).
+
+## New networks
+
+The `Provider` enum is closed, so a plugin for a new network first needs an SDK
 pull request adding a value. See [docs/PLUGINS.md](docs/PLUGINS.md).
+
+## License of contributions
+
+A DCO sign-off is not required. By contributing you agree your work is
+licensed under Apache-2.0.
