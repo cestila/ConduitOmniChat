@@ -11,9 +11,63 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        conduitd = pkgs.buildGoModule {
+        version = "0.1.1";
+
+        # -------------------------------------------------------------
+        # 1. Official Precompiled Binary Release (Default)
+        # -------------------------------------------------------------
+        conduit-gui-bin = pkgs.appimageTools.wrapType2 {
+          pname = "conduit-gui";
+          inherit version;
+
+          src = pkgs.fetchurl {
+            url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
+            hash = "sha256-VIkwjNvG9WEMB5tIq0LZqEAk6+Ga6BZZTOU/pxx3yV4=";
+          };
+
+          extraPkgs = p: [ ];
+
+          meta = with pkgs.lib; {
+            description = "GUI desktop client for ConduitOmniChat (Official precompiled binary)";
+            homepage = "https://github.com/cestila/ConduitOmniChat";
+            license = licenses.asl20;
+            mainProgram = "conduit-gui";
+            platforms = [ "x86_64-linux" ];
+          };
+        };
+
+        conduitd-bin = pkgs.stdenv.mkDerivation {
           pname = "conduitd";
-          version = "0.1.1-unreleased";
+          inherit version;
+
+          src = pkgs.fetchurl {
+            url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/conduitd_${version}_linux_amd64.tar.gz";
+            hash = "sha256-6rcrRxtePWwdIGhRoXEiA/vCNzqumKlOh4kGjQOwFpE=";
+          };
+
+          sourceRoot = ".";
+
+          installPhase = ''
+            mkdir -p $out/bin
+            cp conduitd $out/bin/conduitd
+            chmod +x $out/bin/conduitd
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Background daemon for ConduitOmniChat (Official precompiled binary)";
+            homepage = "https://github.com/cestila/ConduitOmniChat";
+            license = licenses.asl20;
+            mainProgram = "conduitd";
+            platforms = [ "x86_64-linux" ];
+          };
+        };
+
+        # -------------------------------------------------------------
+        # 2. Source-Built Targets (Development / Main branch)
+        # -------------------------------------------------------------
+        conduitd-source = pkgs.buildGoModule {
+          pname = "conduitd-source";
+          version = "${version}-dev";
 
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
@@ -34,7 +88,7 @@
           subPackages = [ "cmd/conduitd" ];
 
           meta = with pkgs.lib; {
-            description = "Background daemon for ConduitOmniChat";
+            description = "Background daemon for ConduitOmniChat (Built from source)";
             homepage = "https://github.com/cestila/ConduitOmniChat";
             license = licenses.asl20;
             mainProgram = "conduitd";
@@ -42,9 +96,9 @@
           };
         };
 
-        conduit-gui = pkgs.buildNpmPackage {
-          pname = "conduit-gui";
-          version = "1.0.0";
+        conduit-gui-source = pkgs.buildNpmPackage {
+          pname = "conduit-gui-source";
+          version = "${version}-dev";
 
           src = pkgs.lib.cleanSourceWith {
             src = ./gui;
@@ -74,13 +128,13 @@
             mkdir -p $out/bin
             makeWrapper ${pkgs.lib.getExe pkgs.electron} $out/bin/conduit-gui \
               --add-flags "$out/share/conduit-gui/main.js" \
-              --set-default CONDUITD_PATH "${conduitd}/bin/conduitd"
+              --set-default CONDUITD_PATH "${conduitd-source}/bin/conduitd"
 
             mkdir -p $out/share/applications
             cat << 'DESKTOP' > $out/share/applications/conduit-gui.desktop
 [Desktop Entry]
-Name=Conduit OmniChat
-Comment=Local-first multi-network chat client
+Name=Conduit OmniChat (Dev)
+Comment=Local-first multi-network chat client (Built from source)
 Exec=conduit-gui %U
 Terminal=false
 Type=Application
@@ -92,7 +146,7 @@ DESKTOP
           '';
 
           meta = with pkgs.lib; {
-            description = "GUI desktop client for ConduitOmniChat";
+            description = "GUI desktop client for ConduitOmniChat (Built from source)";
             homepage = "https://github.com/cestila/ConduitOmniChat";
             license = licenses.asl20;
             mainProgram = "conduit-gui";
@@ -102,14 +156,23 @@ DESKTOP
       in
       {
         packages = {
-          default = conduit-gui;
-          inherit conduitd conduit-gui;
+          # Default: official precompiled binaries
+          default = conduit-gui-bin;
+          conduit-gui = conduit-gui-bin;
+          conduitd = conduitd-bin;
+
+          # Optional: built from source (main branch / local modifications)
+          conduit-gui-source = conduit-gui-source;
+          conduitd-source = conduitd-source;
         };
 
         apps = {
-          default = flake-utils.lib.mkApp { drv = conduit-gui; };
-          conduitd = flake-utils.lib.mkApp { drv = conduitd; };
-          conduit-gui = flake-utils.lib.mkApp { drv = conduit-gui; };
+          default = flake-utils.lib.mkApp { drv = conduit-gui-bin; };
+          conduit-gui = flake-utils.lib.mkApp { drv = conduit-gui-bin; };
+          conduitd = flake-utils.lib.mkApp { drv = conduitd-bin; };
+
+          conduit-gui-source = flake-utils.lib.mkApp { drv = conduit-gui-source; };
+          conduitd-source = flake-utils.lib.mkApp { drv = conduitd-source; };
         };
       }
     );
