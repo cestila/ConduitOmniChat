@@ -27,6 +27,31 @@
 
           extraPkgs = p: [ ];
 
+          extraInstallCommands = ''
+            mkdir -p $out/share/applications
+            cat << 'DESKTOP' > $out/share/applications/conduit-gui.desktop
+[Desktop Entry]
+Name=Conduit OmniChat
+Comment=ConduitOmniChat Portable Multi-Platform GUI Client
+Exec=conduit-gui %U
+Terminal=false
+Type=Application
+Icon=conduit-gui
+Categories=Network;Chat;InstantMessaging;
+StartupWMClass=Conduit
+DESKTOP
+
+            mkdir -p $out/share/icons/hicolor/256x256/apps
+            cp ${pkgs.appimageTools.extract {
+              pname = "conduit-gui";
+              inherit version;
+              src = pkgs.fetchurl {
+                url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
+                hash = "sha256-VIkwjNvG9WEMB5tIq0LZqEAk6+Ga6BZZTOU/pxx3yV4=";
+              };
+            }}/usr/share/icons/hicolor/256x256/apps/conduit-gui.png $out/share/icons/hicolor/256x256/apps/
+          '';
+
           meta = with pkgs.lib; {
             description = "GUI desktop client for ConduitOmniChat (Official precompiled binary)";
             homepage = "https://github.com/cestila/ConduitOmniChat";
