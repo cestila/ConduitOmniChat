@@ -58,7 +58,7 @@
                 base != ".git";
           };
 
-          npmDepsHash = "sha256-jr2qRPa59RHUOcnzNhUkI15vyrcLZGsH9UuYtuAth58=";
+          npmDepsHash = "sha256-TnbeThxfjtyvzu0yMzS5WCmwfB3SrBPezT9Mj2ywARM=";
           dontNpmBuild = true;
 
           env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
