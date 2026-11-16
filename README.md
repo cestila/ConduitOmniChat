@@ -51,11 +51,28 @@ More detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install (users)
 
+### Prebuilt Releases
+
 1. Download the desktop app for your platform from the
    [GitHub Releases](https://github.com/cestila/ConduitOmniChat/releases) page:
    AppImage or `tar.gz` (Linux), portable or NSIS installer (Windows). The app
    bundles `conduitd` and starts it for you.
-2. Install the plugins you need:
+
+### NixOS / Nix Flakes
+
+Run directly with Nix or add to your system/Home Manager configuration:
+
+```sh
+# Run desktop GUI
+nix run github:cestila/ConduitOmniChat
+
+# Or run daemon standalone
+nix run github:cestila/ConduitOmniChat#conduitd
+```
+
+Detailed NixOS and Home Manager instructions are available in [docs/NIXOS.md](docs/NIXOS.md).
+
+### Installing Plugins
    - from the app: open the **Plugins** panel and install an official plugin, or
    - from a terminal:
 
