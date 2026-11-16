@@ -1,41 +1,65 @@
 # Installing ConduitOmniChat on NixOS / Nix
 
-ConduitOmniChat provides a Nix Flake exposing both the background daemon (`conduitd`) and the desktop client (`conduit-gui`).
+ConduitOmniChat provides a Nix Flake exposing both the official precompiled binary releases (default, fast, no compilation required) and development builds compiled directly from source.
 
-## Packages & Apps in the Flake
+## Available Packages & Targets
 
-- **`default` / `conduit-gui`**: Desktop Electron client. It is wrapped to automatically execute against the compiled `conduitd` daemon binary. Includes a desktop entry.
-- **`conduitd`**: The Go headless daemon binary. Useful if you run headless or manage the daemon separately.
+| Target | Description | Source |
+| --- | --- | --- |
+| **`default` / `conduit-gui`** | Official desktop release (`0.1.1`) | GitHub Release AppImage (FHS wrapped) |
+| **`conduitd`** | Official headless daemon (`0.1.1`) | GitHub Release precompiled tarball |
+| **`conduit-gui-source`** | Desktop Electron client | Compiled from git repository / branch |
+| **`conduitd-source`** | Headless daemon | Compiled from Go source |
 
-## Quick Run (without permanent install)
+---
 
-Run directly from GitHub using `nix run`:
+## 1. Quick Run (without permanent install)
+
+### Using Official Release Binaries (Default)
 
 ```sh
-# Run the desktop GUI (launches conduitd in the background automatically)
+# Run desktop GUI directly
 nix run github:cestila/ConduitOmniChat
 
-# Or run the daemon standalone
+# Run headless daemon
 nix run github:cestila/ConduitOmniChat#conduitd
 ```
 
-Or clone the repository and run locally:
+### Pinning a Specific Release Tag
+
+To run or pin a specific released tag:
 
 ```sh
-nix run .#conduit-gui
+nix run github:cestila/ConduitOmniChat/v0.1.1
 ```
 
-## Adding to NixOS (`configuration.nix`)
+### Compiling and Running from `main` (Source Target)
 
-In a flake-based NixOS setup:
+To test bleeding-edge changes from the `main` branch compiled on the fly:
 
-1. Add the flake input to your `/etc/nixos/flake.nix`:
+```sh
+# Run desktop GUI built from source
+nix run github:cestila/ConduitOmniChat#conduit-gui-source
+
+# Run daemon built from source
+nix run github:cestila/ConduitOmniChat#conduitd-source
+```
+
+---
+
+## 2. NixOS System Configuration (`configuration.nix`)
+
+In your flake-based NixOS setup:
 
 ```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    
+    # Track the release tag or main branch:
     conduit.url = "github:cestila/ConduitOmniChat";
+    # Or pin to tag:
+    # conduit.url = "github:cestila/ConduitOmniChat/v0.1.1";
   };
 
   outputs = { self, nixpkgs, conduit, ... }: {
@@ -45,8 +69,13 @@ In a flake-based NixOS setup:
         ./configuration.nix
         {
           environment.systemPackages = [
-            conduit.packages.x86_64-linux.default # or conduit-gui
+            # Option A: Official Precompiled Binaries (Fast, default)
+            conduit.packages.x86_64-linux.default # or conduit.packages.x86_64-linux.conduit-gui
             conduit.packages.x86_64-linux.conduitd
+
+            # Option B: Built from Source (uncomment if you want to compile locally)
+            # conduit.packages.x86_64-linux.conduit-gui-source
+            # conduit.packages.x86_64-linux.conduitd-source
           ];
         }
       ];
@@ -55,13 +84,14 @@ In a flake-based NixOS setup:
 }
 ```
 
-2. Rebuild your system:
-
+Apply with:
 ```sh
 sudo nixos-rebuild switch --flake /etc/nixos#yourhostname
 ```
 
-## Adding to Home Manager
+---
+
+## 3. Home Manager Configuration
 
 ```nix
 {
@@ -77,8 +107,12 @@ sudo nixos-rebuild switch --flake /etc/nixos#yourhostname
       modules = [
         {
           home.packages = [
+            # Default precompiled release
             conduit.packages.x86_64-linux.conduit-gui
             conduit.packages.x86_64-linux.conduitd
+
+            # Or from source:
+            # conduit.packages.x86_64-linux.conduit-gui-source
           ];
         }
       ];
@@ -87,23 +121,17 @@ sudo nixos-rebuild switch --flake /etc/nixos#yourhostname
 }
 ```
 
-## Temporary Shell
+---
 
-To inspect or use the binaries in a temporary environment:
+## 4. Managing Plugins in NixOS
 
-```sh
-nix shell github:cestila/ConduitOmniChat#conduit-gui github:cestila/ConduitOmniChat#conduitd
-```
+Plugins (`conduit-plugin-*`) are dynamic executables downloaded on demand:
 
-## Managing Plugins in NixOS
-
-Plugins for Conduit are dynamic executables (`conduit-plugin-*`).
-Once `conduit-gui` or `conduitd` is installed:
-
-- You can install official plugins right from the GUI's **Plugins** panel.
-- Or use the terminal command:
+- Install official plugins from the GUI in the **Plugins** panel.
+- Or use the terminal:
   ```sh
   conduitd plugin install telegram
   conduitd plugin install whatsapp
   ```
-Plugins are installed into `~/.local/share/conduit/plugins`, ensuring your user-level plugin installations remain mutable outside the read-only Nix store.
+
+Plugins are installed to `~/.local/share/conduit/plugins`, ensuring plugin management remains mutable and isolated from the read-only Nix store.
