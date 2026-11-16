@@ -38,7 +38,7 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  if (process.env.NODE_ENV !== 'production' || process.env.DEBUG) {
+  if (!app.isPackaged && (process.env.NODE_ENV === 'development' || process.env.DEBUG)) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
