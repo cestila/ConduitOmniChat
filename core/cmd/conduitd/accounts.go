@@ -42,3 +42,25 @@ func resumeConnectRequest(acc *conduitv1.ProtoAccount) *conduitv1.ConnectRequest
 		Credentials:       acc.GetCredentials(),
 	}
 }
+
+// resolveAccountIDForProvider returns the active account ID for a provider,
+// preferring a connected account and falling back to the first matching account.
+func resolveAccountIDForProvider(ctx context.Context, db *storage.DB, provider conduitv1.Provider) string {
+	accounts, err := db.ListAccounts(ctx)
+	if err != nil {
+		return ""
+	}
+	var fallback string
+	for _, acc := range accounts {
+		if acc.Provider != provider {
+			continue
+		}
+		if acc.Status == "connected" {
+			return acc.Id
+		}
+		if fallback == "" {
+			fallback = acc.Id
+		}
+	}
+	return fallback
+}

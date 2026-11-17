@@ -190,6 +190,18 @@ func (m *Manager) GetInstance(name string) (*Instance, bool) {
 	return inst, ok
 }
 
+// ListInstances returns all active plugin instances sorted by name.
+func (m *Manager) ListInstances() []*Instance {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*Instance, 0, len(m.plugins))
+	for _, inst := range m.plugins {
+		out = append(out, inst)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // Stop detiene un plugin en ejecución de forma segura.
 func (m *Manager) Stop(name string) {
 	m.mu.Lock()

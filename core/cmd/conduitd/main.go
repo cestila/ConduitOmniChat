@@ -189,7 +189,8 @@ func main() {
 						if displayName == "" {
 							displayName = ev.RemoteSenderId
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, "", ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						accountID := resolveAccountIDForProvider(context.Background(), db, plugCfg.Proto)
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, accountID, ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo registrar el contacto %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {
@@ -209,6 +210,7 @@ func main() {
 								ChannelType:     ev.ChannelType,
 								AvatarURL:       contact.AvatarURL,
 							})
+							bus.Publish(eventbus.EventContactUpdated, contact)
 						}
 					}
 
@@ -444,7 +446,8 @@ func main() {
 						if displayName == "" {
 							displayName = chatTarget
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, "", chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						accountID := resolveAccountIDForProvider(context.Background(), db, plugCfg.Proto)
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, accountID, chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo resolver el contacto del mensaje %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {
@@ -461,6 +464,7 @@ func main() {
 								ChannelType:     ev.ChannelType,
 								AvatarURL:       contact.AvatarURL,
 							})
+							bus.Publish(eventbus.EventContactUpdated, contact)
 						}
 					}
 
@@ -705,8 +709,11 @@ func isTopicOrGroupTarget(remoteID, body, serverID, channelType string) bool {
 	return body == "group" ||
 		strings.Contains(remoteID, "@g.us") ||
 		strings.Contains(remoteID, "_topic_") ||
+		strings.Contains(remoteID, "@broadcast") ||
+		strings.Contains(remoteID, "@newsletter") ||
 		serverID != "" ||
-		channelType == "forum"
+		channelType == "forum" ||
+		channelType == "group"
 }
 
 // extractTopicServerID returns explicitServerID if set (stripping any trailing _topic_ suffix),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -483,12 +484,14 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	subDeleted := s.bus.Subscribe(eventbus.EventMessageDeleted)
 	subRead := s.bus.Subscribe(eventbus.EventConversationRead)
 	subSync := s.bus.Subscribe(eventbus.EventSyncProgress)
+	subContact := s.bus.Subscribe(eventbus.EventContactUpdated)
 	defer s.bus.Unsubscribe(eventbus.EventMessageReceived, subReceived)
 	defer s.bus.Unsubscribe(eventbus.EventMessageSent, subSent)
 	defer s.bus.Unsubscribe(eventbus.EventMessageUpdated, subUpdated)
 	defer s.bus.Unsubscribe(eventbus.EventMessageDeleted, subDeleted)
 	defer s.bus.Unsubscribe(eventbus.EventConversationRead, subRead)
 	defer s.bus.Unsubscribe(eventbus.EventSyncProgress, subSync)
+	defer s.bus.Unsubscribe(eventbus.EventContactUpdated, subContact)
 
 	for {
 		select {
@@ -566,6 +569,21 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 					TimestampUnix: ev.Timestamp.Unix(),
 					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
 						ChannelStatusUpdate: syncPayload,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subContact:
+			if contact, ok := ev.Payload.(*domain.Contact); ok && contact != nil {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ContactUpdated{
+						ContactUpdated: &conduitv1.ContactUpdatedEvent{
+							Contact: protoContactFromDomain(contact),
+						},
 					},
 				})
 				if err != nil {
@@ -678,6 +696,7 @@ func protoChannelsFromDomain(channels []domain.ContactChannel) []*conduitv1.Prot
 			ServerId:        ch.ServerID,
 			ParentChannelId: ch.ParentChannelID,
 			ChannelType:     ch.ChannelType,
+			AccountId:       ch.AccountID,
 		})
 	}
 	return protoChannels
@@ -760,6 +779,149 @@ func (s *Server) SplitChannel(ctx context.Context, req *conduitv1.SplitChannelRe
 	return &conduitv1.SplitChannelResponse{
 		NewContact: protoContactFromDomain(newContact),
 	}, nil
+}
+
+// isNonPersonRemoteID reports whether a remote identifier represents a group, broadcast, newsletter, or forum topic.
+func isNonPersonRemoteID(remoteID string) bool {
+	return strings.Contains(remoteID, "@g.us") ||
+		strings.Contains(remoteID, "@broadcast") ||
+		strings.Contains(remoteID, "@newsletter") ||
+		strings.Contains(remoteID, "_topic_")
+}
+
+// SyncContacts pulls 1:1 contacts from connected plugins and unifies them via the identity graph.
+func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRequest) (*conduitv1.SyncContactsResponse, error) {
+	if s.plugins == nil || s.graph == nil {
+		return &conduitv1.SyncContactsResponse{}, nil
+	}
+
+	var instances []*pluginmgr.Instance
+	if req.GetProvider() != "" {
+		if inst, ok := s.plugins.GetInstance(strings.ToLower(req.GetProvider())); ok {
+			instances = append(instances, inst)
+		}
+	} else {
+		instances = s.plugins.ListInstances()
+	}
+
+	var syncedCount int32
+	unifiedContacts := make(map[string]struct{})
+
+	for _, inst := range instances {
+		if inst.RPC == nil {
+			continue
+		}
+		resp, err := inst.RPC.SyncContacts(ctx, &conduitv1.SyncContactsRequest{
+			Provider:  inst.Name,
+			AccountId: req.GetAccountId(),
+		})
+		if err != nil {
+			if status.Code(err) == codes.Unimplemented {
+				log.Printf("⚠️ plugin %s does not implement SyncContacts; skipping", inst.Name)
+				continue
+			}
+			log.Printf("⚠️ SyncContacts failed for plugin %s: %v", inst.Name, err)
+			continue
+		}
+		if resp.GetError() != "" {
+			log.Printf("⚠️ plugin %s SyncContacts reported error: %s", inst.Name, resp.GetError())
+		}
+
+		for _, pc := range resp.GetContacts() {
+			remoteID := strings.TrimSpace(pc.GetRemoteId())
+			if remoteID == "" || isNonPersonRemoteID(remoteID) {
+				continue
+			}
+
+			accountID := pc.GetAccountId()
+			if accountID == "" {
+				accountID = req.GetAccountId()
+			}
+			displayName := pc.GetDisplayName()
+			if displayName == "" {
+				displayName = pc.GetHandle()
+			}
+			if displayName == "" {
+				displayName = remoteID
+			}
+
+			contact, _, err := s.graph.ResolveOrLinkChannel(
+				ctx,
+				domain.Provider(inst.Name),
+				accountID,
+				remoteID,
+				pc.GetHandle(),
+				displayName,
+				pc.GetAvatarUrl(),
+				identity.Hints{
+					Phone: pc.GetPhone(),
+					Email: pc.GetEmail(),
+				},
+			)
+			if err != nil {
+				log.Printf("⚠️ failed to link synced contact %q (%s): %v", displayName, inst.Name, err)
+				continue
+			}
+
+			syncedCount++
+			if contact != nil {
+				unifiedContacts[contact.ID] = struct{}{}
+				if s.bus != nil {
+					s.bus.Publish(eventbus.EventContactUpdated, contact)
+				}
+			}
+		}
+	}
+
+	return &conduitv1.SyncContactsResponse{
+		SyncedCount:  syncedCount,
+		UnifiedCount: int32(len(unifiedContacts)),
+	}, nil
+}
+
+// StartChat creates or activates a 1:1 conversation for a contact using the selected channel.
+func (s *Server) StartChat(ctx context.Context, req *conduitv1.StartChatRequest) (*conduitv1.StartChatResponse, error) {
+	if req.GetContactId() == "" || req.GetChannelId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contact_id and channel_id are required")
+	}
+
+	channel, err := s.db.GetChannelByID(ctx, req.GetChannelId())
+	if err != nil || channel == nil {
+		return nil, status.Error(codes.InvalidArgument, "channel not found")
+	}
+	if channel.ContactID != req.GetContactId() {
+		return nil, status.Error(codes.InvalidArgument, "channel does not belong to contact")
+	}
+
+	contact, err := s.db.GetContactByID(ctx, req.GetContactId())
+	if err != nil || contact == nil {
+		return nil, status.Error(codes.NotFound, "contact not found")
+	}
+
+	chanID := channel.ID
+	contactID := contact.ID
+	if err := s.db.EnsureConversation(ctx, &domain.Conversation{
+		ID:              contact.ID,
+		ContactID:       &contactID,
+		IsGroup:         false,
+		Title:           contact.DisplayName,
+		ActiveChannelID: &chanID,
+		ChannelType:     channel.ChannelType,
+		AvatarURL:       contact.AvatarURL,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "error ensuring conversation: %v", err)
+	}
+	_ = s.db.SetConversationActiveChannel(ctx, contact.ID, channel.ID)
+
+	conv, err := s.db.GetConversationByID(ctx, contact.ID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "error loading conversation: %v", err)
+	}
+	if conv.Provider == "" {
+		conv.Provider = string(channel.Provider)
+	}
+
+	return &conduitv1.StartChatResponse{Conversation: conv}, nil
 }
 
 // ListAccounts lista todas las cuentas configuradas.

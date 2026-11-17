@@ -14,6 +14,7 @@ const (
 	EventMessageUpdated   EventType = "message.updated"
 	EventMessageDeleted   EventType = "message.deleted"
 	EventMessageStatus    EventType = "message.status_updated"
+	// EventContactUpdated emits a *domain.Contact payload when a 1:1 contact is created or updated.
 	EventContactUpdated   EventType = "contact.updated"
 	EventChannelConnected EventType = "channel.connected"
 	EventChannelError     EventType = "channel.error"
