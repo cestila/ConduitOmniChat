@@ -2202,22 +2202,53 @@ async function handleSendMessage() {
 // Busca en el Identity Graph el contacto asociado a una cuenta del usuario
 function findMyAccountContact(acc) {
   if (!state.contacts || state.contacts.length === 0) return null;
-  const cleanIdent = (acc && acc.identifier ? acc.identifier : '').replace(/[^0-9]/g, '');
+  const rawIdent = (acc && acc.identifier ? String(acc.identifier) : '').trim();
+  const cleanIdent = rawIdent.replace(/[^0-9]/g, '');
   const digits = cleanIdent.length >= 7 ? cleanIdent.slice(-7) : cleanIdent;
+  const normIdent = rawIdent.replace(/^@/, '').toLowerCase();
+  const normLabel = (acc && acc.label ? String(acc.label) : '').trim().toLowerCase();
+  const provider = acc && acc.provider ? String(acc.provider).toLowerCase() : '';
 
-  return state.contacts.find(c => {
-    if (c.channels && c.channels.length > 0) {
-      if (digits && c.channels.some(ch => (ch.remote_id || '').replace(/[^0-9]/g, '').includes(digits))) {
-        return true;
+  let best = null;
+  let bestScore = 0;
+
+  for (const c of state.contacts) {
+    let score = 0;
+    const channels = c.channels || [];
+    const hasProvider = provider && channels.some(ch => String(ch.provider || '').toLowerCase() === provider);
+
+    if (digits) {
+      const phoneDigits = (c.phone || '').replace(/[^0-9]/g, '');
+      const chanDigitsMatch = channels.some(ch => (ch.remote_id || '').replace(/[^0-9]/g, '').includes(digits));
+      if ((phoneDigits && phoneDigits.includes(digits)) || chanDigitsMatch) {
+        score += 10;
       }
     }
-    return false;
-  }) || state.contacts.find(c => {
-    if (!c.display_name) return false;
-    const dn = c.display_name.toLowerCase();
-    const l = (acc && acc.label ? acc.label : '').toLowerCase();
-    return Boolean(l && (dn.includes(l) || l.includes(dn)));
-  }) || null;
+    if (normIdent) {
+      if ((c.email || '').toLowerCase() === normIdent) score += 10;
+      if (channels.some(ch => {
+        const rid = (ch.remote_id || '').replace(/^@/, '').toLowerCase();
+        const hdl = (ch.handle || '').replace(/^@/, '').toLowerCase();
+        return rid === normIdent || hdl === normIdent;
+      })) {
+        score += 10;
+      }
+    }
+    if (score === 0 && normLabel && c.display_name) {
+      const dn = c.display_name.toLowerCase();
+      if (dn.includes(normLabel) || normLabel.includes(dn)) {
+        score += 4;
+      }
+    }
+    if (score === 0) continue;
+    if (hasProvider) score += 5;
+    if (c.avatar_url && c.avatar_url.trim() !== '') score += 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best;
 }
 
 // Cargar Cuentas (ZapZap inspired)
@@ -4216,11 +4247,25 @@ function getInitials(name) {
   return cleanName.substring(0, 1).toUpperCase();
 }
 
+function normalizeAvatarURL(avatarUrl) {
+  if (!avatarUrl || typeof avatarUrl !== 'string') return '';
+  const trimmed = avatarUrl.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('file://')) {
+    return `local-media://${encodeURIComponent(trimmed.slice(7))}`;
+  }
+  if (trimmed.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    return `local-media://${encodeURIComponent(trimmed)}`;
+  }
+  return trimmed;
+}
+
 // Genera el contenido interno de un avatar: imagen si existe, o iniciales con soporte onerror
 function getAvatarHTML(avatarUrl, name, fallbackIcon = '') {
   const initials = getInitials(name);
-  if (avatarUrl && avatarUrl.trim() !== '') {
-    const safeUrl = escapeHTML(avatarUrl.trim());
+  const normalized = normalizeAvatarURL(avatarUrl);
+  if (normalized) {
+    const safeUrl = escapeHTML(normalized);
     const safeInitials = escapeHTML(initials);
     return `<img src="${safeUrl}" alt="${safeInitials}" onerror="this.onerror=null; this.parentElement.innerHTML='<span>${safeInitials}</span>';">`;
   }

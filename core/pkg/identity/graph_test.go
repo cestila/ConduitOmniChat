@@ -434,3 +434,24 @@ func TestNewChannelWithEmailIdentifierSetsContactEmail(t *testing.T) {
 		t.Fatalf("se esperaba email 'nuevo@example.com' en el contacto, obtuvo '%s'", c.Email)
 	}
 }
+
+func TestResolveOrLinkChannelUpdatesAvatarURL(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "5491155556666@s.whatsapp.net", "", "Ana", "https://cdn.example.com/old.jpg", Hints{})
+	if err != nil {
+		t.Fatalf("error creando contacto: %v", err)
+	}
+	if c1.AvatarURL != "https://cdn.example.com/old.jpg" {
+		t.Fatalf("esperaba avatar inicial, obtuvo %q", c1.AvatarURL)
+	}
+
+	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "5491155556666@s.whatsapp.net", "", "Ana", "https://cdn.example.com/new.jpg", Hints{})
+	if err != nil {
+		t.Fatalf("error actualizando avatar: %v", err)
+	}
+	if c2.AvatarURL != "https://cdn.example.com/new.jpg" {
+		t.Fatalf("esperaba avatar actualizado %q, obtuvo %q", "https://cdn.example.com/new.jpg", c2.AvatarURL)
+	}
+}

@@ -68,7 +68,7 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 				contactUpdated = true
 			}
 		}
-		if avatarURL != "" && contact.AvatarURL == "" {
+		if avatarURL != "" && avatarURL != contact.AvatarURL {
 			contact.AvatarURL = avatarURL
 			contactUpdated = true
 		}
@@ -116,7 +116,7 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 				c.Phone = canonicalPhone
 				changed = true
 			}
-			if avatarURL != "" && c.AvatarURL == "" {
+			if avatarURL != "" && avatarURL != c.AvatarURL {
 				c.AvatarURL = avatarURL
 				changed = true
 			}
