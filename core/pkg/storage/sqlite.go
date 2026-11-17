@@ -200,6 +200,10 @@ func (d *DB) migrate() error {
 		  AND (title = server_name OR title = '' OR title = id);
 	`)
 
+	if err := d.purgeTopicContacts(); err != nil {
+		fmt.Printf("[storage] advertencia purgando contactos de temas: %v\n", err)
+	}
+
 	if err := d.cleanupAndMergeWhatsAppLIDs(); err != nil {
 		fmt.Printf("[storage] advertencia en migración y unificación de LIDs: %v\n", err)
 	}
@@ -722,4 +726,140 @@ func (d *DB) SearchMessages(ctx context.Context, query string, limit int) ([]dom
 		results = append(results, m)
 	}
 	return results, nil
+}
+
+// purgeTopicContacts removes misclassified forum topic contacts ("Tema ...")
+// created by earlier syncs and converts their conversations into forum channels.
+func (d *DB) purgeTopicContacts() error {
+	rows, err := d.conn.Query(`
+		SELECT id, coalesce(contact_id, ''), provider, remote_id
+		FROM contact_channels
+		WHERE remote_id LIKE '%_topic_%';
+	`)
+	if err != nil {
+		return err
+	}
+	type topicChan struct {
+		id        string
+		contactID string
+		provider  string
+		remoteID  string
+	}
+	var chans []topicChan
+	for rows.Next() {
+		var tc topicChan
+		if scanErr := rows.Scan(&tc.id, &tc.contactID, &tc.provider, &tc.remoteID); scanErr == nil {
+			chans = append(chans, tc)
+		}
+	}
+	rows.Close()
+
+	for _, tc := range chans {
+		idx := strings.Index(tc.remoteID, "_topic_")
+		if idx <= 0 {
+			continue
+		}
+		serverID := tc.remoteID[:idx]
+		canonicalID := tc.provider + ":" + tc.remoteID
+
+		var canonicalExists int
+		_ = d.conn.QueryRow(`SELECT COUNT(*) FROM conversations WHERE id = ?`, canonicalID).Scan(&canonicalExists)
+
+		// Find any misclassified DM conversations linked to this topic contact or channel.
+		convRows, convErr := d.conn.Query(`
+			SELECT id FROM conversations
+			WHERE active_channel_id = ? OR (? <> '' AND contact_id = ?)
+		`, tc.id, tc.contactID, tc.contactID)
+		var convIDs []string
+		if convErr == nil {
+			for convRows.Next() {
+				var cid string
+				if convRows.Scan(&cid) == nil {
+					convIDs = append(convIDs, cid)
+				}
+			}
+			convRows.Close()
+		}
+
+		for _, cid := range convIDs {
+			if cid == canonicalID {
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = coalesce(nullif(server_id, ''), ?),
+					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					WHERE id = ?
+				`, serverID, serverID, cid)
+				continue
+			}
+			if canonicalExists > 0 {
+				_, _ = d.conn.Exec(`UPDATE OR IGNORE messages SET conversation_id = ? WHERE conversation_id = ?`, canonicalID, cid)
+				_, _ = d.conn.Exec(`DELETE FROM conversations WHERE id = ?`, cid)
+			} else {
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = coalesce(nullif(server_id, ''), ?),
+					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					WHERE id = ?
+				`, serverID, serverID, cid)
+			}
+		}
+
+		if tc.contactID != "" {
+			_, _ = d.conn.Exec(`UPDATE contact_channels SET contact_id = '' WHERE id = ?`, tc.id)
+			var remaining int
+			_ = d.conn.QueryRow(`SELECT COUNT(*) FROM contact_channels WHERE contact_id = ?`, tc.contactID).Scan(&remaining)
+			if remaining == 0 {
+				_, _ = d.conn.Exec(`DELETE FROM contacts WHERE id = ?`, tc.contactID)
+			}
+		}
+	}
+
+	// Repair any topic conversations missing server_id / parent_channel_id / is_group.
+	topicConvRows, err := d.conn.Query(`
+		SELECT id FROM conversations
+		WHERE id LIKE '%_topic_%' AND (coalesce(server_id, '') = '' OR is_group = 0 OR contact_id IS NOT NULL)
+	`)
+	if err == nil {
+		var ids []string
+		for topicConvRows.Next() {
+			var id string
+			if topicConvRows.Scan(&id) == nil {
+				ids = append(ids, id)
+			}
+		}
+		topicConvRows.Close()
+		for _, id := range ids {
+			raw := id
+			if colon := strings.Index(raw, ":"); colon >= 0 {
+				raw = raw[colon+1:]
+			}
+			if idx := strings.Index(raw, "_topic_"); idx > 0 {
+				serverID := raw[:idx]
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = coalesce(nullif(server_id, ''), ?),
+					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					WHERE id = ?
+				`, serverID, serverID, id)
+			}
+		}
+	}
+
+	// Clean up orphaned "Tema ..." contacts that have no remaining channels.
+	_, _ = d.conn.Exec(`
+		DELETE FROM contacts
+		WHERE display_name LIKE 'Tema %'
+		  AND NOT EXISTS (SELECT 1 FROM contact_channels cc WHERE cc.contact_id = contacts.id);
+	`)
+
+	return nil
 }

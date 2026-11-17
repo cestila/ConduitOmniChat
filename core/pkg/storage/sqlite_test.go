@@ -219,3 +219,93 @@ func TestSaveMessageUpdatesContentTypeAndMetadata(t *testing.T) {
 		t.Errorf("Poll esperado no nulo con pregunta, obtenido: %+v", found.Poll)
 	}
 }
+
+func TestPurgeTopicContacts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_purge_topics.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init db: %v", err)
+	}
+	defer db.Close()
+
+	// Simular un tema de foro mal guardado como contacto 1-a-1 ("Tema 780")
+	topicContactID := uuid.New().String()
+	_, err = db.conn.Exec("INSERT INTO contacts (id, display_name) VALUES (?, ?)", topicContactID, "Tema 780")
+	if err != nil {
+		t.Fatalf("insert topic contact: %v", err)
+	}
+	topicChannelID := uuid.New().String()
+	_, err = db.conn.Exec("INSERT INTO contact_channels (id, contact_id, provider, remote_id, handle) VALUES (?, ?, ?, ?, ?)",
+		topicChannelID, topicContactID, "telegram", "-1001234567_topic_780", "Tema 780")
+	if err != nil {
+		t.Fatalf("insert topic channel: %v", err)
+	}
+	// Conversación DM mal creada para ese contacto
+	_, err = db.conn.Exec("INSERT INTO conversations (id, contact_id, is_group, title, active_channel_id) VALUES (?, ?, 0, ?, ?)",
+		topicContactID, topicContactID, "Tema 780", topicChannelID)
+	if err != nil {
+		t.Fatalf("insert dm conv: %v", err)
+	}
+	// Mensaje en la conversación DM mal clasificada
+	_, err = db.conn.Exec("INSERT INTO messages (id, conversation_id, channel_id, remote_message_id, sender_type, body, content_type, status, sent_at) VALUES (?, ?, ?, ?, 'contact', 'mensaje en tema', 'text', 'delivered', 1700000000)",
+		uuid.New().String(), topicContactID, topicChannelID, "msg-topic-1")
+	if err != nil {
+		t.Fatalf("insert msg: %v", err)
+	}
+
+	// Contacto humano legítimo que NO debe ser borrado
+	humanID := uuid.New().String()
+	_, err = db.conn.Exec("INSERT INTO contacts (id, display_name) VALUES (?, ?)", humanID, "Ana García")
+	if err != nil {
+		t.Fatalf("insert human contact: %v", err)
+	}
+	_, err = db.conn.Exec("INSERT INTO contact_channels (id, contact_id, provider, remote_id, handle) VALUES (?, ?, ?, ?, ?)",
+		uuid.New().String(), humanID, "telegram", "99887766", "Ana García")
+	if err != nil {
+		t.Fatalf("insert human channel: %v", err)
+	}
+
+	// Re-ejecutar migrate() como ocurre al reiniciar el daemon
+	if err := db.migrate(); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	// 1. El contacto "Tema 780" debe haber sido purgado
+	var topicCount int
+	if err := db.conn.QueryRow("SELECT COUNT(*) FROM contacts WHERE id = ?", topicContactID).Scan(&topicCount); err != nil {
+		t.Fatalf("query contacts: %v", err)
+	}
+	if topicCount != 0 {
+		t.Errorf("esperaba 0 contactos para Tema 780, obtuve %d", topicCount)
+	}
+
+	// 2. El contacto humano legítimo debe seguir existiendo
+	var humanCount int
+	if err := db.conn.QueryRow("SELECT COUNT(*) FROM contacts WHERE id = ?", humanID).Scan(&humanCount); err != nil {
+		t.Fatalf("query human: %v", err)
+	}
+	if humanCount != 1 {
+		t.Errorf("esperaba 1 contacto humano, obtuve %d", humanCount)
+	}
+
+	// 3. El canal del tema debe quedar desvinculado de cualquier contacto
+	var linkedContact string
+	if err := db.conn.QueryRow("SELECT coalesce(contact_id, '') FROM contact_channels WHERE id = ?", topicChannelID).Scan(&linkedContact); err != nil {
+		t.Fatalf("query channel: %v", err)
+	}
+	if linkedContact != "" {
+		t.Errorf("esperaba contact_id vacío en canal de tema, obtuve %q", linkedContact)
+	}
+
+	// 4. La conversación del tema debe quedar como grupo/foro con server_id='-1001234567' y sin contact_id
+	var isGroup int
+	var serverID, channelType, convContactID string
+	err = db.conn.QueryRow("SELECT is_group, coalesce(server_id, ''), coalesce(channel_type, ''), coalesce(contact_id, '') FROM conversations WHERE active_channel_id = ?", topicChannelID).
+		Scan(&isGroup, &serverID, &channelType, &convContactID)
+	if err != nil {
+		t.Fatalf("query conv: %v", err)
+	}
+	if isGroup != 1 || serverID != "-1001234567" || channelType != "forum" || convContactID != "" {
+		t.Errorf("conversación de tema mal migrada: is_group=%d server_id=%q channel_type=%q contact_id=%q", isGroup, serverID, channelType, convContactID)
+	}
+}

@@ -137,8 +137,8 @@ func main() {
 					go rpc.FlushPendingReadSyncForProvider(context.Background(), db, pluginManager, plugCfg.Provider)
 
 				case "contact.sync":
-					// Si es un grupo, registrar como conversación independiente directamente SIN tocar la tabla de contactos
-					if ev.Body == "group" || strings.Contains(ev.RemoteSenderId, "@g.us") {
+					// Si es un grupo o tema de foro, registrar como conversación independiente SIN tocar la tabla de contactos
+					if isTopicOrGroupTarget(ev.RemoteSenderId, ev.Body, ev.ServerId, ev.ChannelType) {
 						convID := fmt.Sprintf("%s:%s", plugCfg.Name, ev.RemoteSenderId)
 						// Crear o asegurar el canal para el grupo sin contact_id
 						channelID := uuid.New().String()
@@ -156,6 +156,20 @@ func main() {
 							})
 						}
 
+						serverID := extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
+						parentID := ev.ParentChannelId
+						chanType := ev.ChannelType
+						if strings.Contains(ev.RemoteSenderId, "_topic_") {
+							if parentID == "" {
+								parentID = serverID
+							}
+							if chanType == "" {
+								chanType = "forum"
+							}
+						} else if chanType == "" {
+							chanType = "group"
+						}
+
 						_ = db.EnsureConversation(context.Background(), &domain.Conversation{
 							ID:              convID,
 							ContactID:       nil,
@@ -163,7 +177,10 @@ func main() {
 							Title:           ev.SenderName,
 							LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 							ActiveChannelID: &channelID,
-							ChannelType:     "group",
+							ServerID:        serverID,
+							ServerName:      ev.ServerName,
+							ParentChannelID: parentID,
+							ChannelType:     chanType,
 							AvatarURL:       ev.AvatarUrl,
 						})
 					} else {
@@ -335,7 +352,7 @@ func main() {
 						}
 						continue
 					}
-					isGroup := strings.Contains(chatTarget, "@g.us") || ev.ServerId != ""
+					isGroup := isTopicOrGroupTarget(chatTarget, "", ev.ServerId, ev.ChannelType)
 
 					var convID string
 					var channelID string
@@ -384,8 +401,17 @@ func main() {
 
 						convTitle := groupTitle
 
+						serverID := extractTopicServerID(chatTarget, ev.ServerId)
+						parentID := ev.ParentChannelId
 						chanType := ev.ChannelType
-						if chanType == "" {
+						if strings.Contains(chatTarget, "_topic_") {
+							if parentID == "" {
+								parentID = serverID
+							}
+							if chanType == "" {
+								chanType = "forum"
+							}
+						} else if chanType == "" {
 							chanType = "group"
 						}
 
@@ -396,9 +422,9 @@ func main() {
 							Title:           convTitle,
 							LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 							ActiveChannelID: &channelID,
-							ServerID:        ev.ServerId,
+							ServerID:        serverID,
 							ServerName:      ev.ServerName,
-							ParentChannelID: ev.ParentChannelId,
+							ParentChannelID: parentID,
 							ChannelType:     chanType,
 							AvatarURL:       ev.AvatarUrl,
 						})
@@ -664,4 +690,26 @@ func main() {
 	grpcServer.GracefulStop()
 	_, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+}
+
+// isTopicOrGroupTarget reports whether a remote target represents a group or forum topic
+// rather than a 1-on-1 human contact.
+func isTopicOrGroupTarget(remoteID, body, serverID, channelType string) bool {
+	return body == "group" ||
+		strings.Contains(remoteID, "@g.us") ||
+		strings.Contains(remoteID, "_topic_") ||
+		serverID != "" ||
+		channelType == "forum"
+}
+
+// extractTopicServerID returns explicitServerID if set, or derives the parent supergroup ID
+// from a "<serverID>_topic_<topicID>" remote identifier.
+func extractTopicServerID(remoteID, explicitServerID string) string {
+	if explicitServerID != "" {
+		return explicitServerID
+	}
+	if idx := strings.Index(remoteID, "_topic_"); idx > 0 {
+		return remoteID[:idx]
+	}
+	return ""
 }
