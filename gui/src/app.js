@@ -43,6 +43,11 @@ const el = {
   pinnedMessageBanner: document.getElementById('pinned-message-banner'),
   pinnedBannerText: document.getElementById('pinned-banner-text'),
   pinnedBannerContent: document.getElementById('pinned-banner-content'),
+  syncProgressModal: document.getElementById('sync-progress-modal'),
+  syncProgressBar: document.getElementById('sync-progress-bar'),
+  syncProgressCount: document.getElementById('sync-progress-count'),
+  syncProgressDetail: document.getElementById('sync-progress-detail'),
+  syncProgressClose: document.getElementById('sync-progress-close'),
   btnUnpinBanner: document.getElementById('btn-unpin-banner'),
   messageInput: document.getElementById('message-input'),
   btnSend: document.getElementById('btn-send-message'),
@@ -3057,6 +3062,10 @@ function setupRealtimeEvents() {
       updatePinnedBanner();
       return;
     }
+    if (envelope.type === 'sync.progress' && envelope.channel_status_update) {
+      handleSyncProgressEvent(envelope.channel_status_update);
+      return;
+    }
     if (envelope.conversation_read) {
       const readEv = envelope.conversation_read;
       const conv = state.conversations.find(c => c.id === readEv.conversation_id);
@@ -3169,14 +3178,13 @@ function setupRealtimeEvents() {
         }
       }
 
-      // 3. Cuando alguien escribe o se envía un mensaje, actualizar conversación en memoria y refrescar lista para ir al top
+      // 3. Cuando alguien escribe o se envía un mensaje, actualizar conversación en memoria y refrescar lista con debounce
       const conv = state.conversations.find(c => c.id === msg.conversation_id);
       if (conv) {
         conv.last_message_at_unix = msg.sent_at_unix || Math.floor(Date.now() / 1000);
         conv.last_message_preview = msg.body;
-        renderConversations();
       }
-      loadConversations();
+      scheduleConversationsRefresh();
 
       // 4. Disparar notificación nativa de escritorio y destello en barra de tareas si corresponde
       handleDesktopNotification(msg, isHistorical);
@@ -3203,6 +3211,88 @@ function setupRealtimeEvents() {
       loadAccounts();
     }
   }, 4000);
+}
+
+let conversationsRefreshTimer = null;
+function scheduleConversationsRefresh() {
+  if (conversationsRefreshTimer) return;
+  conversationsRefreshTimer = setTimeout(() => {
+    conversationsRefreshTimer = null;
+    if (!state.isSearching) {
+      renderConversations();
+      loadConversations();
+    }
+  }, 250);
+}
+
+const syncProgressByProvider = new Map();
+let syncHideTimer = null;
+let syncDismissedByUser = false;
+
+function handleSyncProgressEvent(rawPayload) {
+  let data;
+  try {
+    data = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
+  } catch {
+    return;
+  }
+  if (!data || !data.provider) return;
+
+  if (data.status === 'syncing') {
+    syncDismissedByUser = false;
+  }
+  syncProgressByProvider.set(data.provider, {
+    completed: Number(data.completed) || 0,
+    total: Number(data.total) || 0,
+    status: data.status || 'syncing',
+  });
+
+  let totalSum = 0;
+  let completedSum = 0;
+  let anySyncing = false;
+  const activeProviders = [];
+  syncProgressByProvider.forEach((entry, prov) => {
+    totalSum += entry.total;
+    completedSum += Math.min(entry.completed, entry.total);
+    if (entry.status !== 'done') {
+      anySyncing = true;
+      activeProviders.push(prov);
+    }
+  });
+
+  if (syncHideTimer) {
+    clearTimeout(syncHideTimer);
+    syncHideTimer = null;
+  }
+
+  const pct = totalSum > 0 ? Math.min(100, Math.round((completedSum / totalSum) * 100)) : 100;
+  if (el.syncProgressBar) el.syncProgressBar.style.width = `${pct}%`;
+  if (el.syncProgressCount) el.syncProgressCount.textContent = `${completedSum} / ${totalSum}`;
+  if (el.syncProgressDetail) {
+    el.syncProgressDetail.textContent = anySyncing
+      ? `Cargando mensajes (${activeProviders.join(', ')})…`
+      : 'Mensajes sincronizados';
+  }
+
+  if (el.syncProgressClose && !el.syncProgressClose._bound) {
+    el.syncProgressClose._bound = true;
+    el.syncProgressClose.addEventListener('click', () => {
+      syncDismissedByUser = true;
+      if (el.syncProgressModal) el.syncProgressModal.classList.add('hidden');
+    });
+  }
+
+  if (!syncDismissedByUser && el.syncProgressModal) {
+    el.syncProgressModal.classList.remove('hidden');
+  }
+
+  if (!anySyncing) {
+    syncHideTimer = setTimeout(() => {
+      if (el.syncProgressModal) el.syncProgressModal.classList.add('hidden');
+      syncProgressByProvider.clear();
+      syncHideTimer = null;
+    }, 350);
+  }
 }
 
 // Determina si un mensaje entrante debe disparar notificación de escritorio

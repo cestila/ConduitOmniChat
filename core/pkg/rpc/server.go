@@ -482,11 +482,13 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	subUpdated := s.bus.Subscribe(eventbus.EventMessageUpdated)
 	subDeleted := s.bus.Subscribe(eventbus.EventMessageDeleted)
 	subRead := s.bus.Subscribe(eventbus.EventConversationRead)
+	subSync := s.bus.Subscribe(eventbus.EventSyncProgress)
 	defer s.bus.Unsubscribe(eventbus.EventMessageReceived, subReceived)
 	defer s.bus.Unsubscribe(eventbus.EventMessageSent, subSent)
 	defer s.bus.Unsubscribe(eventbus.EventMessageUpdated, subUpdated)
 	defer s.bus.Unsubscribe(eventbus.EventMessageDeleted, subDeleted)
 	defer s.bus.Unsubscribe(eventbus.EventConversationRead, subRead)
+	defer s.bus.Unsubscribe(eventbus.EventSyncProgress, subSync)
 
 	for {
 		select {
@@ -551,6 +553,19 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 					TimestampUnix: ev.Timestamp.Unix(),
 					Payload: &conduitv1.EventEnvelope_ConversationRead{
 						ConversationRead: readEv,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subSync:
+			if syncPayload, ok := ev.Payload.(string); ok {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
+						ChannelStatusUpdate: syncPayload,
 					},
 				})
 				if err != nil {

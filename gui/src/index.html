@@ -670,6 +670,25 @@
     </div>
   </div>
 
+  <!-- Popup de progreso de sincronización inicial -->
+  <div id="sync-progress-modal" class="sync-progress-toast hidden" role="status" aria-live="polite">
+    <div class="sync-progress-header">
+      <div class="sync-progress-title">
+        <i class="fa-solid fa-rotate fa-spin"></i>
+        <span id="sync-progress-detail">Sincronizando mensajes…</span>
+      </div>
+      <div class="sync-progress-right">
+        <span id="sync-progress-count" class="sync-progress-count">0 / 0</span>
+        <button id="sync-progress-close" class="icon-btn sync-progress-close-btn" title="Ocultar">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+    <div class="sync-progress-track">
+      <div id="sync-progress-bar" class="sync-progress-fill" style="width: 0%"></div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

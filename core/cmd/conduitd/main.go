@@ -132,7 +132,7 @@ func main() {
 					applyChannelReadyForProvider(context.Background(), db, plugCfg.Proto, ev)
 					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":connected")
 					// Recupera lo que llegó mientras el daemon no corría.
-					go catchUpRecentMessages(db, pluginManager, plugCfg.Provider, 15)
+					go catchUpRecentMessages(db, pluginManager, bus, plugCfg.Provider, 15)
 					// Reintenta los leídos que no pudieron llegar al proveedor mientras estaba caído.
 					go rpc.FlushPendingReadSyncForProvider(context.Background(), db, pluginManager, plugCfg.Provider)
 
