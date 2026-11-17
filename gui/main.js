@@ -574,6 +574,100 @@ ipcMain.handle('conduit:openExternal', async (_e, url) => {
   }
 });
 
+const linkPreviewCache = new Map();
+
+function isPrivateOrLocalHost(hostname) {
+  const host = (hostname || '').toLowerCase();
+  if (!host || host === 'localhost' || host === '::1' || host.endsWith('.local')) return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true;
+  const m172 = host.match(/^172\.(\d+)\./);
+  if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return true;
+  return false;
+}
+
+function decodeHtmlEntities(str) {
+  return String(str || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .trim();
+}
+
+function extractMetaContent(html, keys) {
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`, 'i');
+    const m1 = html.match(re1);
+    if (m1 && m1[1]) return decodeHtmlEntities(m1[1]);
+    const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`, 'i');
+    const m2 = html.match(re2);
+    if (m2 && m2[1]) return decodeHtmlEntities(m2[1]);
+  }
+  return '';
+}
+
+ipcMain.handle('conduit:fetchLinkPreview', async (_e, rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || isPrivateOrLocalHost(parsed.hostname)) {
+    return null;
+  }
+  const normalizedUrl = parsed.toString();
+  if (linkPreviewCache.has(normalizedUrl)) {
+    return linkPreviewCache.get(normalizedUrl);
+  }
+
+  try {
+    const res = await fetch(normalizedUrl, {
+      signal: AbortSignal.timeout(4000),
+      headers: { 'User-Agent': 'ConduitOmniChat/1.0 (+link-preview)' }
+    });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
+      return null;
+    }
+    const html = (await res.text()).slice(0, 131072);
+    const title = extractMetaContent(html, ['og:title', 'twitter:title']) ||
+      decodeHtmlEntities((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '');
+    const description = extractMetaContent(html, ['og:description', 'twitter:description', 'description']);
+    let image = extractMetaContent(html, ['og:image', 'twitter:image']);
+    if (image && !/^https?:\/\//i.test(image)) {
+      try {
+        image = new URL(image, normalizedUrl).toString();
+      } catch {
+        image = '';
+      }
+    }
+    const siteName = extractMetaContent(html, ['og:site_name']);
+    if (!title && !description) return null;
+
+    const preview = {
+      url: normalizedUrl,
+      title: title.slice(0, 160),
+      description: description.slice(0, 240),
+      image,
+      siteName: siteName.slice(0, 80),
+      domain: parsed.hostname.replace(/^www\./, '')
+    };
+    if (linkPreviewCache.size >= 200) {
+      const oldestKey = linkPreviewCache.keys().next().value;
+      linkPreviewCache.delete(oldestKey);
+    }
+    linkPreviewCache.set(normalizedUrl, preview);
+    return preview;
+  } catch {
+    return null;
+  }
+});
+
 app.whenReady().then(async () => {
   // Protocolo seguro para reproducir y renderizar fotos/videos/audios locales de ~/.local/share/conduit/media/
   protocol.registerFileProtocol('local-media', (request, callback) => {

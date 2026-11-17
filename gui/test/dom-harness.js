@@ -174,7 +174,7 @@ function createHarness(fixtures = {}) {
     pinnedMessages = {},
   } = fixtures;
 
-  const calls = { merge: [], identity: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], togglePlugin: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [] };
+  const calls = { merge: [], identity: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], togglePlugin: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [], fetchLinkPreview: [] };
 
   const registry = new Map();
   const docListeners = {};
@@ -362,6 +362,11 @@ function createHarness(fixtures = {}) {
       openExternal: async (url) => {
         calls.openExternal.push(url);
         return true;
+      },
+      fetchLinkPreview: async (url) => {
+        calls.fetchLinkPreview.push(url);
+        const map = fixtures.linkPreviews || {};
+        return map[url] || null;
       },
       downloadAttachment: async (attachmentId, wait) => {
         calls.downloadAttachment.push([attachmentId, wait]);

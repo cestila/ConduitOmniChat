@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   // Multimedia
   openPath: (filePath) => ipcRenderer.invoke('conduit:openPath', filePath),
   openExternal: (url) => ipcRenderer.invoke('conduit:openExternal', url),
+  fetchLinkPreview: (url) => ipcRenderer.invoke('conduit:fetchLinkPreview', url),
   downloadAttachment: (attachmentId, wait) => ipcRenderer.invoke('conduit:downloadAttachment', attachmentId, wait),
   saveAttachmentAs: (attachment) => ipcRenderer.invoke('conduit:saveAttachmentAs', attachment),
   pickFiles: () => ipcRenderer.invoke('conduit:pickFiles'),

@@ -1250,12 +1250,25 @@ function appendMessageBubble(msg) {
     `;
   }
 
-  // Renderizar Tarjeta de Video Social (YouTube, TikTok, Instagram)
+  // Renderizar Tarjeta de Video Social (YouTube, TikTok, Instagram) o Vista Previa de Enlace
   let socialVideoHTML = '';
+  let linkPreviewHTML = '';
+  let pendingLinkPreviewUrl = '';
   if (msg.body && !msg.poll && !msg.location && !msg.shared_contact) {
     const social = parseSocialVideoLink(msg.body);
     if (social) {
       socialVideoHTML = renderSocialVideoCardHTML(social);
+    } else {
+      const firstUrl = extractFirstHttpUrl(msg.body);
+      if (firstUrl) {
+        if (linkPreviewCache.has(firstUrl)) {
+          const cached = linkPreviewCache.get(firstUrl);
+          if (cached) linkPreviewHTML = renderLinkPreviewCardHTML(cached);
+        } else {
+          linkPreviewHTML = `<div class="link-preview-slot" data-preview-url="${escapeHTML(firstUrl)}"></div>`;
+          pendingLinkPreviewUrl = firstUrl;
+        }
+      }
     }
   }
 
@@ -1314,8 +1327,9 @@ function appendMessageBubble(msg) {
       ${locationHTML}
       ${contactCardHTML}
       ${pollHTML}
-      ${msg.body && !msg.poll && !msg.location && !msg.shared_contact ? `<div class="msg-body ${isJumbo ? 'emoji-jumbo' : ''}">${escapeHTML(msg.body)}</div>` : ''}
+      ${msg.body && !msg.poll && !msg.location && !msg.shared_contact ? `<div class="msg-body ${isJumbo ? 'emoji-jumbo' : ''}">${linkifyMessageBody(msg.body)}</div>` : ''}
       ${socialVideoHTML}
+      ${linkPreviewHTML}
       ${buttonsHTML}
       <div class="msg-meta">
         <span>${timeStr}</span>
@@ -1330,6 +1344,10 @@ function appendMessageBubble(msg) {
     row.innerHTML = bubbleHTML + avatarHTML;
   } else {
     row.innerHTML = avatarHTML + bubbleHTML;
+  }
+
+  if (pendingLinkPreviewUrl) {
+    loadLinkPreviewIntoRow(row, pendingLinkPreviewUrl);
   }
 
   // Asignar listeners interactivos a la burbuja
@@ -1898,7 +1916,7 @@ function updateMessageInDOM(updatedMsg) {
   }
   applyAttachmentsToRow(updatedMsg.id || (row.dataset ? row.dataset.msgId : ''), updatedMsg.attachments);
   const bodyEl = row.querySelector('.msg-body');
-  if (bodyEl) bodyEl.textContent = updatedMsg.body || '';
+  if (bodyEl) bodyEl.innerHTML = linkifyMessageBody(updatedMsg.body || '');
   const metaEl = row.querySelector('.msg-meta');
   if (metaEl && updatedMsg.is_edited && !metaEl.querySelector('.msg-edited-badge')) {
     const badge = document.createElement('span');
@@ -1909,7 +1927,7 @@ function updateMessageInDOM(updatedMsg) {
   // En entornos simulados donde el DOM no parsea hijos reales en row.innerHTML:
   if (row._html) {
     if (updatedMsg.body !== undefined) {
-      row._html = row._html.replace(/<div class="msg-body[^"]*">[\s\S]*?<\/div>/, `<div class="msg-body">${escapeHTML(updatedMsg.body || '')}</div>`);
+      row._html = row._html.replace(/<div class="msg-body[^"]*">[\s\S]*?<\/div>/, `<div class="msg-body">${linkifyMessageBody(updatedMsg.body || '')}</div>`);
     }
     if (updatedMsg.is_edited && !row._html.includes('msg-edited-badge')) {
       row._html = row._html.replace(/<div class="msg-meta">/, `<div class="msg-meta"><span class="msg-edited-badge">(editado)</span>`);
@@ -4594,6 +4612,91 @@ async function forwardMessageToConversation(targetConvId) {
   } catch (err) {
     console.error('Error reenviando mensaje:', err);
     alert('Error al reenviar mensaje: ' + (err.message || err));
+  }
+}
+
+const linkPreviewCache = new Map();
+const URL_MATCH_REGEX = /https?:\/\/[^\s<>"'`]+/gi;
+
+function stripTrailingUrlPunctuation(rawUrl) {
+  return String(rawUrl || '').replace(/[.,;!?)]+$/, '');
+}
+
+function extractFirstHttpUrl(text) {
+  if (!text || typeof text !== 'string') return '';
+  URL_MATCH_REGEX.lastIndex = 0;
+  const match = URL_MATCH_REGEX.exec(text);
+  if (!match) return '';
+  return stripTrailingUrlPunctuation(match[0]);
+}
+
+function linkifyMessageBody(text) {
+  if (!text || typeof text !== 'string') return '';
+  URL_MATCH_REGEX.lastIndex = 0;
+  let result = '';
+  let lastIndex = 0;
+  let match;
+  while ((match = URL_MATCH_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      result += escapeHTML(text.slice(lastIndex, match.index));
+    }
+    const raw = match[0];
+    const cleanUrl = stripTrailingUrlPunctuation(raw);
+    const trailing = raw.slice(cleanUrl.length);
+    const safeUrl = escapeHTML(cleanUrl);
+    result += `<a href="${safeUrl}" class="msg-link" onclick="openExternalLink(event, '${safeUrl}')">${safeUrl}</a>${escapeHTML(trailing)}`;
+    lastIndex = match.index + raw.length;
+  }
+  if (lastIndex < text.length) {
+    result += escapeHTML(text.slice(lastIndex));
+  }
+  return result;
+}
+
+function openExternalLink(event, url) {
+  if (event) event.preventDefault();
+  if (url && window.conduitAPI && typeof window.conduitAPI.openExternal === 'function') {
+    window.conduitAPI.openExternal(url);
+  }
+}
+
+function renderLinkPreviewCardHTML(preview) {
+  if (!preview || !preview.url) return '';
+  const safeUrl = escapeHTML(preview.url);
+  const safeTitle = escapeHTML(preview.title || preview.domain || preview.url);
+  const safeDesc = escapeHTML(preview.description || '');
+  const safeSite = escapeHTML(preview.siteName || preview.domain || '');
+  const imgHTML = preview.image && /^https?:\/\//i.test(preview.image)
+    ? `<div class="link-preview-thumb"><img src="${escapeHTML(preview.image)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" /></div>`
+    : '';
+  return `
+    <div class="link-preview-card" onclick="openExternalLink(event, '${safeUrl}')" title="${safeUrl}">
+      ${imgHTML}
+      <div class="link-preview-body">
+        <div class="link-preview-domain">${safeSite}</div>
+        <div class="link-preview-title">${safeTitle}</div>
+        ${safeDesc ? `<div class="link-preview-desc">${safeDesc}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function loadLinkPreviewIntoRow(row, url) {
+  if (!row || !url || !window.conduitAPI || typeof window.conduitAPI.fetchLinkPreview !== 'function') return;
+  try {
+    const preview = await window.conduitAPI.fetchLinkPreview(url);
+    linkPreviewCache.set(url, preview || null);
+    if (!preview) return;
+    const cardHTML = renderLinkPreviewCardHTML(preview);
+    const slot = row.querySelector && row.querySelector('.link-preview-slot');
+    if (slot && slot.parentNode) {
+      slot.outerHTML = cardHTML;
+    } else if (typeof row._html === 'string') {
+      const marker = `<div class="link-preview-slot" data-preview-url="${escapeHTML(url)}"></div>`;
+      row._html = row._html.replace(marker, cardHTML);
+    }
+  } catch {
+    linkPreviewCache.set(url, null);
   }
 }
 
