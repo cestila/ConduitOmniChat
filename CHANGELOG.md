@@ -14,6 +14,20 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-17
+
+### Added
+
+- Nix Flake (`flake.nix`, `flake.lock`) and NixOS installation guide
+  (`docs/NIXOS.md`), exposing precompiled release targets (`conduit-gui`,
+  `conduitd`) by default alongside source-built targets (`conduit-gui-source`,
+  `conduitd-source`), with desktop entry and icon integration.
+
+### Fixed
+
+- Desktop app no longer opens DevTools by default when packaged or running in
+  production mode (`F12` and `DEBUG=1` remain available).
+
 ## [0.1.1] - 2026-11-13
 
 ### Changed
@@ -55,6 +69,7 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.0
