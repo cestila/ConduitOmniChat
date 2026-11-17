@@ -77,11 +77,12 @@ func (d *DB) migrate() error {
 		id TEXT PRIMARY KEY,
 		contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
 		provider TEXT NOT NULL,
+		account_id TEXT NOT NULL DEFAULT '',
 		remote_id TEXT NOT NULL,
 		handle TEXT,
 		is_preferred BOOLEAN DEFAULT FALSE,
 		metadata TEXT,
-		UNIQUE(provider, remote_id)
+		UNIQUE(provider, account_id, remote_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS conversations (
@@ -185,6 +186,11 @@ func (d *DB) migrate() error {
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_conversations_last_msg ON conversations(last_message_at DESC);")
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);")
 
+	if err := d.migrateContactChannelsAccountID(); err != nil {
+		return fmt.Errorf("error migrando account_id en contact_channels: %w", err)
+	}
+	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_contact_channels_contact ON contact_channels(contact_id);")
+
 	// Reparar temas de foro en bases existentes que hayan quedado con channel_type='group' o título pisado por el servidor
 	_, _ = d.conn.Exec(`
 		UPDATE conversations
@@ -204,6 +210,10 @@ func (d *DB) migrate() error {
 		fmt.Printf("[storage] advertencia purgando contactos de temas: %v\n", err)
 	}
 
+	if _, err := d.CleanupNonPersonContacts(context.Background()); err != nil {
+		fmt.Printf("[storage] advertencia limpiando contactos no-persona: %v\n", err)
+	}
+
 	if err := d.cleanupAndMergeWhatsAppLIDs(); err != nil {
 		fmt.Printf("[storage] advertencia en migración y unificación de LIDs: %v\n", err)
 	}
@@ -215,6 +225,62 @@ func (d *DB) migrate() error {
 	}
 
 	return d.EnsureAccountAndSettingsTables()
+}
+
+// migrateContactChannelsAccountID reconstruye contact_channels en bases existentes para añadir
+// account_id y actualizar la restricción única a UNIQUE(provider, account_id, remote_id) sin pérdida de datos.
+func (d *DB) migrateContactChannelsAccountID() error {
+	rows, err := d.conn.Query("PRAGMA table_info(contact_channels);")
+	if err != nil {
+		return err
+	}
+	hasAccountID := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err == nil {
+			if name == "account_id" {
+				hasAccountID = true
+			}
+		}
+	}
+	rows.Close()
+	if hasAccountID {
+		return nil
+	}
+
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmts := []string{
+		`CREATE TABLE contact_channels_new (
+			id TEXT PRIMARY KEY,
+			contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			account_id TEXT NOT NULL DEFAULT '',
+			remote_id TEXT NOT NULL,
+			handle TEXT,
+			is_preferred BOOLEAN DEFAULT FALSE,
+			metadata TEXT,
+			UNIQUE(provider, account_id, remote_id)
+		);`,
+		`INSERT INTO contact_channels_new (id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata)
+		 SELECT id, contact_id, provider, '', remote_id, handle, is_preferred, metadata FROM contact_channels;`,
+		`DROP TABLE contact_channels;`,
+		`ALTER TABLE contact_channels_new RENAME TO contact_channels;`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // cleanupAndMergeWhatsAppLIDs unifica contactos y conversaciones duplicadas entre canales @lid y @s.whatsapp.net,

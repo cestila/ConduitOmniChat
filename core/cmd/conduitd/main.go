@@ -189,7 +189,7 @@ func main() {
 						if displayName == "" {
 							displayName = ev.RemoteSenderId
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, "", ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo registrar el contacto %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {
@@ -444,7 +444,7 @@ func main() {
 						if displayName == "" {
 							displayName = chatTarget
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, "", chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo resolver el contacto del mensaje %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {

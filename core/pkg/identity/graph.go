@@ -32,19 +32,19 @@ type Hints struct {
 // ResolveOrLinkChannel busca un contacto existente con el remoteID normalizado o crea uno nuevo.
 // El teléfono y el email canónicos mandan sobre el identificador del proveedor: si la
 // identidad ya pertenece a otro contacto, ambos se fusionan en el dueño de la identidad.
-func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provider, rawRemoteID, handle, displayName, avatarURL string, hints Hints) (*domain.Contact, *domain.ContactChannel, error) {
+func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provider, accountID, rawRemoteID, handle, displayName, avatarURL string, hints Hints) (*domain.Contact, *domain.ContactChannel, error) {
 	normRemoteID := NormalizeIdentifier(rawRemoteID)
 
 	identifierEmail := NormalizeEmail(rawRemoteID)
 	identifierPhone := PhoneFromIdentifier(rawRemoteID)
 	handleEmail := NormalizeEmail(handle)
 	hintEmail := NormalizeEmail(hints.Email)
-	hintPhone := PhoneFromIdentifier(hints.Phone)
+	hintPhone := NormalizePhone(hints.Phone)
 	canonicalEmail := firstNonEmpty(hintEmail, identifierEmail)
 	canonicalPhone := firstNonEmpty(hintPhone, identifierPhone)
 
 	// 1. Buscar si el canal ya está registrado
-	existingChannel, err := g.db.GetChannelByProviderAndRemoteID(ctx, string(provider), normRemoteID)
+	existingChannel, err := g.db.GetChannelByProviderAccountAndRemoteID(ctx, string(provider), accountID, normRemoteID)
 	if err == nil && existingChannel != nil {
 		contact, err := g.db.GetContactByID(ctx, existingChannel.ContactID)
 		if err != nil {
@@ -132,6 +132,7 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 		ID:          uuid.New().String(),
 		ContactID:   contactID,
 		Provider:    provider,
+		AccountID:   accountID,
 		RemoteID:    normRemoteID,
 		Handle:      handle,
 		IsPreferred: false,

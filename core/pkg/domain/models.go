@@ -32,6 +32,7 @@ type ContactChannel struct {
 	ID              string   `json:"id"`
 	ContactID       string   `json:"contact_id"`
 	Provider        Provider `json:"provider"`
+	AccountID       string   `json:"account_id,omitempty"`
 	RemoteID        string   `json:"remote_id"` // E.164 phone, TG user_id, Discord snowflake, email
 	Handle          string   `json:"handle,omitempty"`
 	IsPreferred     bool     `json:"is_preferred"`
