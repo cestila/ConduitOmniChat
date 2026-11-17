@@ -4409,15 +4409,7 @@ function renderCachedAttachmentHTML(att) {
 
   // 3. Audios y Notas de Voz
   if (mime.startsWith('audio/')) {
-    return `
-      <div class="media-audio-card">
-        <div class="audio-icon-badge"><i class="fa-solid fa-microphone-lines"></i></div>
-        <audio controls preload="metadata">
-          <source src="${escapeHTML(src)}" type="${escapeHTML(mime)}">
-          Tu sistema no soporta audio HTML5.
-        </audio>
-      </div>
-    `;
+    return renderAudioPlayerHTML(att, src, mime, name);
   }
 
   // 4. Documentos (PDF, DOCX, ZIP, etc.)
@@ -4698,6 +4690,145 @@ async function loadLinkPreviewIntoRow(row, url) {
   } catch {
     linkPreviewCache.set(url, null);
   }
+}
+
+function formatAudioDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+function buildAudioWaveformBarsHTML(seedKey) {
+  let hash = 2166136261;
+  const str = String(seedKey || 'audio');
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const bars = [];
+  for (let i = 0; i < 24; i++) {
+    const val = Math.abs(Math.imul(hash ^ (i * 37), 2654435761)) % 100;
+    const heightPct = 25 + Math.round((val / 100) * 75);
+    bars.push(`<span class="audio-wave-bar" style="height:${heightPct}%"></span>`);
+  }
+  return bars.join('');
+}
+
+function renderAudioPlayerHTML(att, src, mime, name) {
+  const seed = (att && att.id) || name || src;
+  const barsHTML = buildAudioWaveformBarsHTML(seed);
+  return `
+    <div class="media-audio-card" data-audio-seed="${escapeHTML(seed)}">
+      <audio class="audio-native-el" preload="metadata"
+        onloadedmetadata="initAudioPlayerMeta(this)"
+        ontimeupdate="syncAudioPlayerProgress(this)"
+        onended="resetAudioPlayerUI(this)">
+        <source src="${escapeHTML(src)}" type="${escapeHTML(mime)}">
+      </audio>
+      <button type="button" class="audio-play-btn" onclick="toggleAudioPlay(this)" title="Reproducir / Pausar">
+        <i class="fa-solid fa-play"></i>
+      </button>
+      <div class="audio-player-main">
+        <div class="audio-waveform-track" onclick="seekAudioTrack(event, this)" title="Saltar en el audio">
+          ${barsHTML}
+        </div>
+        <div class="audio-player-meta">
+          <span class="audio-time-label">0:00</span>
+          <span class="audio-file-label" title="${escapeHTML(name)}"><i class="fa-solid fa-microphone-lines"></i> ${escapeHTML(name || 'Audio')}</span>
+        </div>
+      </div>
+      <button type="button" class="audio-speed-btn" onclick="cycleAudioSpeed(this)" title="Velocidad de reproducción">1x</button>
+    </div>
+  `;
+}
+
+function toggleAudioPlay(btn) {
+  const card = btn && btn.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  if (!audio) return;
+
+  if (audio.paused) {
+    document.querySelectorAll('.audio-native-el').forEach(other => {
+      if (other !== audio && !other.paused) {
+        other.pause();
+        const otherBtn = other.closest('.media-audio-card')?.querySelector('.audio-play-btn i');
+        if (otherBtn) otherBtn.className = 'fa-solid fa-play';
+      }
+    });
+    audio.play().catch(() => {});
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = 'fa-solid fa-pause';
+  } else {
+    audio.pause();
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = 'fa-solid fa-play';
+  }
+}
+
+function cycleAudioSpeed(btn) {
+  const card = btn && btn.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  const rates = [1, 1.5, 2];
+  const current = audio ? audio.playbackRate : 1;
+  const nextIdx = (rates.indexOf(current) + 1) % rates.length;
+  const nextRate = rates[nextIdx];
+  if (audio) audio.playbackRate = nextRate;
+  btn.textContent = `${nextRate}x`;
+}
+
+function seekAudioTrack(event, track) {
+  const card = track && track.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  const rect = track.getBoundingClientRect();
+  if (!rect || rect.width <= 0) return;
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * audio.duration;
+  syncAudioPlayerProgress(audio);
+}
+
+function initAudioPlayerMeta(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const label = card.querySelector('.audio-time-label');
+  if (label && Number.isFinite(audio.duration)) {
+    label.textContent = formatAudioDuration(audio.duration);
+  }
+}
+
+function syncAudioPlayerProgress(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const label = card.querySelector('.audio-time-label');
+  const bars = card.querySelectorAll('.audio-wave-bar');
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+  const ratio = duration > 0 ? Math.min(1, audio.currentTime / duration) : 0;
+  if (label) {
+    label.textContent = duration > 0
+      ? `${formatAudioDuration(audio.currentTime)} / ${formatAudioDuration(duration)}`
+      : formatAudioDuration(audio.currentTime);
+  }
+  if (bars && bars.length) {
+    const activeCount = Math.round(ratio * bars.length);
+    bars.forEach((bar, idx) => {
+      if (idx < activeCount) bar.classList.add('played');
+      else bar.classList.remove('played');
+    });
+  }
+}
+
+function resetAudioPlayerUI(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const icon = card.querySelector('.audio-play-btn i');
+  if (icon) icon.className = 'fa-solid fa-play';
+  card.querySelectorAll('.audio-wave-bar').forEach(b => b.classList.remove('played'));
+  initAudioPlayerMeta(audio);
 }
 
 // Detección y extracción de videos sociales (YouTube, TikTok, Instagram)
