@@ -238,6 +238,13 @@ func main() {
 					// calcula una nueva solo si el canal no la tiene (nuevo o base anterior).
 					position := channelPositionFor(context.Background(), db, convID, ev.ServerId)
 
+					convServerID := ev.ServerId
+					convParentID := ev.ParentChannelId
+					if strings.Contains(ev.RemoteSenderId, "_topic_") {
+						convServerID = extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
+						convParentID = extractTopicServerID(ev.RemoteSenderId, ev.ParentChannelId)
+					}
+
 					conv := &domain.Conversation{
 						ID:              convID,
 						ContactID:       nil,
@@ -245,9 +252,9 @@ func main() {
 						Title:           channelTitle,
 						LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 						ActiveChannelID: &channelID,
-						ServerID:        ev.ServerId,
+						ServerID:        convServerID,
 						ServerName:      ev.ServerName,
-						ParentChannelID: ev.ParentChannelId,
+						ParentChannelID: convParentID,
 						ChannelType:     ev.ChannelType,
 						Position:        position,
 					}
@@ -702,10 +709,13 @@ func isTopicOrGroupTarget(remoteID, body, serverID, channelType string) bool {
 		channelType == "forum"
 }
 
-// extractTopicServerID returns explicitServerID if set, or derives the parent supergroup ID
-// from a "<serverID>_topic_<topicID>" remote identifier.
+// extractTopicServerID returns explicitServerID if set (stripping any trailing _topic_ suffix),
+// or derives the parent supergroup ID from a "<serverID>_topic_<topicID>" remote identifier.
 func extractTopicServerID(remoteID, explicitServerID string) string {
 	if explicitServerID != "" {
+		if idx := strings.Index(explicitServerID, "_topic_"); idx > 0 {
+			return explicitServerID[:idx]
+		}
 		return explicitServerID
 	}
 	if idx := strings.Index(remoteID, "_topic_"); idx > 0 {

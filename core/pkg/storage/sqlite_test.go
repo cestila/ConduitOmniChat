@@ -308,4 +308,23 @@ func TestPurgeTopicContacts(t *testing.T) {
 	if isGroup != 1 || serverID != "-1001234567" || channelType != "forum" || convContactID != "" {
 		t.Errorf("conversación de tema mal migrada: is_group=%d server_id=%q channel_type=%q contact_id=%q", isGroup, serverID, channelType, convContactID)
 	}
+
+	// 5. Conversación de tema con server_id contaminado ('c4308592267_topic_6') y título 'Tema 6' teniendo handle real
+	badTopicChanID := uuid.New().String()
+	_, _ = db.conn.Exec("INSERT INTO contact_channels (id, contact_id, provider, remote_id, handle) VALUES (?, '', 'telegram', 'c4308592267_topic_6', 'MuniJK-Despliegues')", badTopicChanID)
+	_, _ = db.conn.Exec("INSERT INTO conversations (id, is_group, title, server_id, parent_channel_id, channel_type, active_channel_id) VALUES ('telegram:c4308592267_topic_6', 1, 'Tema 6', 'c4308592267_topic_6', 'c4308592267_topic_6', 'forum', ?)", badTopicChanID)
+
+	if err := db.migrate(); err != nil {
+		t.Fatalf("second migrate failed: %v", err)
+	}
+
+	var fixedServer, fixedParent, fixedTitle string
+	err = db.conn.QueryRow("SELECT server_id, parent_channel_id, title FROM conversations WHERE id = 'telegram:c4308592267_topic_6'").
+		Scan(&fixedServer, &fixedParent, &fixedTitle)
+	if err != nil {
+		t.Fatalf("query fixed topic: %v", err)
+	}
+	if fixedServer != "c4308592267" || fixedParent != "c4308592267" || fixedTitle != "MuniJK-Despliegues" {
+		t.Errorf("tema con server_id contaminado mal reparado: server_id=%q parent=%q title=%q", fixedServer, fixedParent, fixedTitle)
+	}
 }

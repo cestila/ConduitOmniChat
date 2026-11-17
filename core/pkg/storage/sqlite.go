@@ -820,10 +820,11 @@ func (d *DB) purgeTopicContacts() error {
 		}
 	}
 
-	// Repair any topic conversations missing server_id / parent_channel_id / is_group.
+	// Repair any topic conversations missing or having contaminated server_id / parent_channel_id / is_group.
 	topicConvRows, err := d.conn.Query(`
 		SELECT id FROM conversations
-		WHERE id LIKE '%_topic_%' AND (coalesce(server_id, '') = '' OR is_group = 0 OR contact_id IS NOT NULL)
+		WHERE id LIKE '%_topic_%'
+		  AND (coalesce(server_id, '') = '' OR server_id LIKE '%_topic_%' OR parent_channel_id LIKE '%_topic_%' OR is_group = 0 OR contact_id IS NOT NULL)
 	`)
 	if err == nil {
 		var ids []string
@@ -846,13 +847,34 @@ func (d *DB) purgeTopicContacts() error {
 					SET is_group = 1,
 					    contact_id = NULL,
 					    channel_type = 'forum',
-					    server_id = coalesce(nullif(server_id, ''), ?),
-					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					    server_id = ?,
+					    parent_channel_id = ?
 					WHERE id = ?
 				`, serverID, serverID, id)
 			}
 		}
 	}
+
+	// Restore real topic names from contact_channels.handle when conversations.title fell back to "Tema ...".
+	_, _ = d.conn.Exec(`
+		UPDATE conversations
+		SET title = (
+			SELECT cc.handle
+			FROM contact_channels cc
+			WHERE cc.id = conversations.active_channel_id
+		)
+		WHERE id LIKE '%_topic_%'
+		  AND title LIKE 'Tema %'
+		  AND EXISTS (
+			SELECT 1
+			FROM contact_channels cc
+			WHERE cc.id = conversations.active_channel_id
+			  AND coalesce(cc.handle, '') <> ''
+			  AND cc.handle NOT LIKE 'Tema %'
+			  AND cc.handle <> coalesce(conversations.server_name, '')
+			  AND cc.handle <> cc.remote_id
+		  );
+	`)
 
 	// Clean up orphaned "Tema ..." contacts that have no remaining channels.
 	_, _ = d.conn.Exec(`

@@ -1153,7 +1153,8 @@ function appendMessageBubble(msg) {
   // Avatar e inicial
   let msgAvatarHTML = '';
   if (isOutgoing) {
-    const myAccount = state.accounts[0];
+    const convProvider = currentConv ? providerKindOf(currentConv) : '';
+    const myAccount = (convProvider && state.accounts.find(a => String(a.provider || '').toLowerCase() === convProvider)) || state.accounts[0];
     const myName = (myAccount && (myAccount.label || myAccount.identifier)) ? (myAccount.label || myAccount.identifier) : 'YO';
     let myAvatar = '';
     const myContact = findMyAccountContact(myAccount);
