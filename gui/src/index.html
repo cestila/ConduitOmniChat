@@ -240,99 +240,26 @@
         </div>
       </section>
 
-      <!-- VISTA DE CONTACTOS UNIFICADOS (Identity Graph) -->
+      <!-- VISTA DE CONTACTOS UNIFICADOS -->
       <section id="view-contacts" class="view-panel">
         <header class="panel-header">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <h2>Contactos Unificados</h2>
-            <button class="btn-card btn-primary" id="btn-show-merge-modal"><i class="fa-solid fa-code-merge"></i> Unificar Dos Contactos</button>
-            <button class="btn-card" id="btn-show-identity-modal" style="background:#3f4147;color:white;"><i class="fa-solid fa-id-card"></i> Definir Email / Teléfono</button>
-            <button class="btn-card" id="btn-show-link-identity-modal" style="background:#3f4147;color:white;"><i class="fa-solid fa-link"></i> Vincular por Email / Teléfono</button>
+          <div class="contacts-header-title">
+            <h2>Contactos</h2>
+            <span id="contacts-sync-status" class="contacts-sync-status"></span>
           </div>
-          <button class="icon-btn btn-close-panel" data-close="view-contacts"><i class="fa-solid fa-xmark"></i></button>
+          <div class="contacts-toolbar">
+            <div class="contacts-search-wrap">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="contacts-search-input" class="form-input" placeholder="Buscar por nombre, teléfono o email..." />
+            </div>
+            <button class="btn-card btn-primary" id="btn-sync-contacts" title="Sincronizar contactos">
+              <i class="fa-solid fa-rotate"></i> Sync Contacts
+            </button>
+            <button class="icon-btn btn-close-panel" data-close="view-contacts"><i class="fa-solid fa-xmark"></i></button>
+          </div>
         </header>
         <div class="panel-body">
-          <!-- Cuadro de Fusión de Contactos -->
-          <div id="merge-contacts-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
-            <h3>Unificar Identidades Humanas (Identity Graph)</h3>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-              Combina dos contactos en uno solo. Todos los canales (WhatsApp, Telegram, Discord) del contacto secundario se transferirán al principal. Los grupos y canales de servidores permanecen independientes y no se fusionan.
-            </p>
-            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:flex-end;">
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Principal (Destino)</label>
-                <select id="merge-primary-select" class="form-input" style="width:100%;">
-                  <!-- Opciones cargadas dinámicamente -->
-                </select>
-              </div>
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Secundario (A fusionar)</label>
-                <select id="merge-secondary-select" class="form-input" style="width:100%;">
-                  <!-- Opciones cargadas dinámicamente -->
-                </select>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn-card btn-primary" id="btn-submit-merge">Confirmar Fusión</button>
-                <button class="btn-card" id="btn-cancel-merge" style="background:#3f4147;color:white;">Cancelar</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Cuadro de Identidad Canónica (email / teléfono) -->
-          <div id="identity-set-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
-            <h3>Definir Email y Teléfono Canónicos</h3>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-              La identidad canónica es la que enlaza automáticamente a la misma persona entre WhatsApp, Telegram y Discord.
-              Un email o teléfono ya usado por otro contacto se rechaza para no duplicar identidades.
-            </p>
-            <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:12px;align-items:flex-end;">
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto</label>
-                <select id="identity-contact-select" class="form-input" style="width:100%;">
-                  <!-- Opciones cargadas dinámicamente -->
-                </select>
-              </div>
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Email</label>
-                <input type="text" id="identity-email-input" class="form-input" placeholder="persona@dominio.com" style="width:100%;" />
-              </div>
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Teléfono</label>
-                <input type="text" id="identity-phone-input" class="form-input" placeholder="+54911..." style="width:100%;" />
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn-card btn-primary" id="btn-save-identity">Guardar Identidad</button>
-                <button class="btn-card" id="btn-cancel-identity" style="background:#3f4147;color:white;">Cancelar</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Cuadro de Vinculación Manual por Identidad -->
-          <div id="identity-link-box" class="settings-group hidden" style="margin-bottom:20px;border:1px solid var(--accent-conduit);">
-            <h3>Vincular por Email o Teléfono</h3>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-              Busca el contacto dueño de un email, un teléfono o un identificador de canal y fusíonalo dentro del contacto principal elegido.
-            </p>
-            <div style="display:grid;grid-template-columns:1.6fr 1.4fr auto;gap:12px;align-items:flex-end;">
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Email, teléfono o identificador</label>
-                <input type="text" id="identity-query-input" class="form-input" placeholder="persona@dominio.com / +54911... / discord-user-1" style="width:100%;" />
-              </div>
-              <div>
-                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Contacto Principal (Destino)</label>
-                <select id="identity-target-select" class="form-input" style="width:100%;">
-                  <!-- Opciones cargadas dinámicamente -->
-                </select>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn-card btn-primary" id="btn-find-identity">Buscar</button>
-                <button class="btn-card" id="btn-cancel-link-identity" style="background:#3f4147;color:white;">Cancelar</button>
-              </div>
-            </div>
-            <div id="identity-results" style="margin-top:12px;"></div>
-          </div>
-
-          <div class="accounts-grid" id="contacts-grid">
+          <div class="contacts-list" id="contacts-list">
             <!-- Renderizado dinámicamente -->
           </div>
         </div>

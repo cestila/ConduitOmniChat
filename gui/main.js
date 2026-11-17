@@ -365,24 +365,12 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('conduit:mergeContacts', async (_e, primaryId, secondaryId) => {
-    return await rpcClient.mergeContacts(primaryId, secondaryId);
+  ipcMain.handle('conduit:syncContacts', async (_e, provider, accountId) => {
+    return await rpcClient.syncContacts(provider || '', accountId || '');
   });
 
-  ipcMain.handle('conduit:splitChannel', async (_e, channelId, newName) => {
-    return await rpcClient.splitChannel(channelId, newName);
-  });
-
-  ipcMain.handle('conduit:setContactIdentity', async (_e, contactId, email, phone) => {
-    return await rpcClient.setContactIdentity(contactId, email, phone);
-  });
-
-  ipcMain.handle('conduit:findContactsByIdentity', async (_e, query) => {
-    try {
-      return await rpcClient.findContactsByIdentity(query);
-    } catch (e) {
-      return [];
-    }
+  ipcMain.handle('conduit:startChat', async (_e, contactId, channelId) => {
+    return await rpcClient.startChat(contactId, channelId || '');
   });
 
   ipcMain.handle('conduit:getSettings', async () => {

@@ -97,29 +97,10 @@ const el = {
   btnSettingRestartApp: document.getElementById('btn-setting-restart-app'),
 
   // Contactos Unificados
-  contactsGrid: document.getElementById('contacts-grid'),
-  mergeContactsBox: document.getElementById('merge-contacts-box'),
-  btnShowMergeModal: document.getElementById('btn-show-merge-modal'),
-  btnCancelMerge: document.getElementById('btn-cancel-merge'),
-  btnSubmitMerge: document.getElementById('btn-submit-merge'),
-  mergePrimarySelect: document.getElementById('merge-primary-select'),
-  mergeSecondarySelect: document.getElementById('merge-secondary-select'),
-
-  // Identidad canónica (email / teléfono)
-  identitySetBox: document.getElementById('identity-set-box'),
-  identityLinkBox: document.getElementById('identity-link-box'),
-  identityContactSelect: document.getElementById('identity-contact-select'),
-  identityEmailInput: document.getElementById('identity-email-input'),
-  identityPhoneInput: document.getElementById('identity-phone-input'),
-  btnShowIdentityModal: document.getElementById('btn-show-identity-modal'),
-  btnCancelIdentity: document.getElementById('btn-cancel-identity'),
-  btnSaveIdentity: document.getElementById('btn-save-identity'),
-  identityQueryInput: document.getElementById('identity-query-input'),
-  identityTargetSelect: document.getElementById('identity-target-select'),
-  identityResults: document.getElementById('identity-results'),
-  btnShowLinkIdentityModal: document.getElementById('btn-show-link-identity-modal'),
-  btnCancelLinkIdentity: document.getElementById('btn-cancel-link-identity'),
-  btnFindIdentity: document.getElementById('btn-find-identity'),
+  contactsList: document.getElementById('contacts-list'),
+  contactsSearchInput: document.getElementById('contacts-search-input'),
+  btnSyncContacts: document.getElementById('btn-sync-contacts'),
+  contactsSyncStatus: document.getElementById('contacts-sync-status'),
 
   // Alta de cuenta y credenciales por proveedor
   newAccountProvider: document.getElementById('new-account-provider'),
@@ -2586,14 +2567,12 @@ window.removeAccount = async (id) => {
   }
 };
 
-// ================= GESTIÓN DE CONTACTOS UNIFICADOS (Identity Graph) =================
+// ================= GESTIÓN DE CONTACTOS UNIFICADOS =================
 async function loadContacts() {
   try {
     const contacts = await window.conduitAPI.listContacts();
     state.contacts = contacts || [];
-    renderContactsGrid();
-    populateMergeSelects();
-    populateIdentitySelects();
+    renderContactsList();
     renderAccountsSidebar();
     renderAccountsGrid();
     if (state.activeConversationId) {
@@ -2605,208 +2584,143 @@ async function loadContacts() {
   }
 }
 
-function renderContactsGrid() {
-  if (!el.contactsGrid) return;
-  el.contactsGrid.innerHTML = '';
-  if (state.contacts.length === 0) {
-    el.contactsGrid.innerHTML = '<p class="text-muted">No hay contactos registrados en el Identity Graph.</p>';
+function providerKeyFor(providerVal) {
+  const info = providerInfoForChannel({ provider: providerVal });
+  if (info && info.kind && info.kind !== 'default' && info.kind !== 'unknown') {
+    return info.kind;
+  }
+  return String(providerVal || '').toLowerCase();
+}
+
+function resolveChannelAccountLabel(channel, contactChannels) {
+  if (!channel) return '';
+  const targetKey = providerKeyFor(channel.provider);
+  const accountsForProvider = (state.accounts || []).filter(
+    a => providerKeyFor(a.provider) === targetKey
+  );
+  const contactChannelsForProvider = (contactChannels || []).filter(
+    x => providerKeyFor(x.provider) === targetKey
+  );
+  if (accountsForProvider.length <= 1 && contactChannelsForProvider.length <= 1) {
+    return '';
+  }
+  if (channel.account_id) {
+    const account = (state.accounts || []).find(a => a.id === channel.account_id);
+    if (account) {
+      return account.label || account.identifier || channel.account_id;
+    }
+    return channel.account_id;
+  }
+  return channel.handle || channel.remote_id || '';
+}
+
+function renderContactsList(filterQuery) {
+  if (!el.contactsList) return;
+  el.contactsList.innerHTML = '';
+
+  const rawQuery = filterQuery !== undefined
+    ? String(filterQuery)
+    : (el.contactsSearchInput ? String(el.contactsSearchInput.value || '') : '');
+  const query = rawQuery.trim().toLowerCase();
+
+  const filtered = (state.contacts || []).filter(c => {
+    if (!query) return true;
+    const haystacks = [
+      c.display_name,
+      c.email,
+      c.phone,
+      ...(c.channels || []).flatMap(ch => [ch.handle, ch.remote_id]),
+    ];
+    return haystacks.some(v => v && String(v).toLowerCase().includes(query));
+  });
+
+  if (filtered.length === 0) {
+    el.contactsList.innerHTML = '<p class="text-muted">No hay contactos para mostrar.</p>';
     return;
   }
 
-  state.contacts.forEach(c => {
-    const card = document.createElement('div');
-    card.className = 'account-card';
+  filtered.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'contact-row';
     const channels = c.channels || [];
+    const avatarContent = getAvatarHTML(c.avatar_url, c.display_name || 'Contacto');
+    const metaParts = [c.email, c.phone].filter(Boolean).map(v => escapeHTML(v));
 
-    const channelsBadges = channels.map(ch => {
-      const chInfo = getProviderByEnum(ch.provider);
-      const icon = chInfo.icon;
+    const chipsHtml = channels.map(ch => {
+      const chInfo = providerInfoForChannel(ch);
       const chColor = chInfo.color || `var(--accent-${chInfo.id})`;
+      const accountLabel = resolveChannelAccountLabel(ch, channels);
+      const accountBadge = accountLabel
+        ? `<span class="chip-account-label">${escapeHTML(accountLabel)}</span>`
+        : '';
+      const titleAttr = escapeHTML(ch.handle || ch.remote_id || chInfo.name);
       return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;margin-top:6px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <i class="${icon}" style="color:${chColor}"></i>
-            <span style="font-size:12px;">${escapeHTML(ch.handle || ch.remote_id)}</span>
-          </div>
-          ${channels.length > 1 ? `
-            <button class="icon-btn-sm" onclick="splitContactChannel('${ch.id}', '${escapeHTML(ch.handle || ch.remote_id)}')" title="Desacoplar canal a un contacto independiente">
-              <i class="fa-solid fa-scissors"></i>
-            </button>` : ''}
-        </div>
+        <button class="provider-chip" data-contact-id="${escapeHTML(c.id)}" data-channel-id="${escapeHTML(ch.id)}" onclick="startChatWithChannel('${escapeHTML(c.id)}', '${escapeHTML(ch.id)}')" title="${titleAttr}">
+          <i class="${chInfo.icon}" style="color:${chColor}"></i>
+          <span>${escapeHTML(chInfo.name)}</span>
+          ${accountBadge}
+        </button>
       `;
     }).join('');
 
-    const avatarContent = getAvatarHTML(c.avatar_url, c.display_name || 'Contacto');
-
-    const identityLines = [];
-    if (c.email) identityLines.push(`<div><i class="fa-solid fa-envelope"></i> ${escapeHTML(c.email)}</div>`);
-    if (c.phone) identityLines.push(`<div><i class="fa-solid fa-phone"></i> ${escapeHTML(c.phone)}</div>`);
-    if (identityLines.length === 0) identityLines.push('<div>Sin identidad canónica (email / teléfono)</div>');
-
-    card.innerHTML = `
-      <div class="account-card-header">
+    row.innerHTML = `
+      <div class="contact-row-main">
         <div class="conv-avatar">${avatarContent}</div>
-        <div>
-          <h4>${escapeHTML(c.display_name || 'Contacto')}</h4>
-          <span style="font-size:11px;color:var(--text-dim);">${channels.length} canal(es) unificado(s)</span>
+        <div class="contact-row-info">
+          <div class="contact-row-name">${escapeHTML(c.display_name || 'Contacto')}</div>
+          ${metaParts.length > 0 ? `<div class="contact-row-meta">${metaParts.join(' · ')}</div>` : ''}
         </div>
       </div>
-      <div style="margin-top:8px;font-size:11px;color:var(--text-dim);display:flex;flex-direction:column;gap:2px;">
-        ${identityLines.join('')}
-      </div>
-      <div style="margin-top:8px;">
-        <p style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;">Canales Vinculados:</p>
-        ${channelsBadges || '<p style="font-size:12px;color:var(--text-dim)">Sin canales activos</p>'}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:auto;padding-top:12px;">
-        <button class="btn-card btn-primary" onclick="openChatWithContact('${c.id}')" style="width:100%;">
-          <i class="fa-solid fa-comment"></i> Abrir Chat
-        </button>
-        <button class="btn-card" style="background:#3f4147;color:white;" onclick="editContactIdentity('${c.id}')" title="Definir email y teléfono">
-          <i class="fa-solid fa-id-card"></i>
-        </button>
+      <div class="contact-channels-chips">
+        ${chipsHtml || '<span class="text-muted" style="font-size:12px;">Sin canales activos</span>'}
       </div>
     `;
-    el.contactsGrid.appendChild(card);
+    el.contactsList.appendChild(row);
   });
 }
 
-function populateMergeSelects() {
-  if (!el.mergePrimarySelect || !el.mergeSecondarySelect) return;
-  el.mergePrimarySelect.innerHTML = '';
-  el.mergeSecondarySelect.innerHTML = '';
-
-  state.contacts.forEach(c => {
-    const opt1 = document.createElement('option');
-    opt1.value = c.id;
-    opt1.textContent = `${c.display_name} (${(c.channels || []).length} canales)`;
-    el.mergePrimarySelect.appendChild(opt1);
-
-    const opt2 = document.createElement('option');
-    opt2.value = c.id;
-    opt2.textContent = `${c.display_name} (${(c.channels || []).length} canales)`;
-    el.mergeSecondarySelect.appendChild(opt2);
-  });
-}
-
-// Rellena los selectores de identidad canónica y de vinculación manual.
-function populateIdentitySelects() {
-  [el.identityContactSelect, el.identityTargetSelect].forEach(select => {
-    if (!select) return;
-    select.innerHTML = '';
-    state.contacts.forEach(c => {
-      const option = document.createElement('option');
-      option.value = c.id;
-      const identity = c.email || c.phone || `${(c.channels || []).length} canales`;
-      option.textContent = `${c.display_name || 'Contacto'} — ${identity}`;
-      select.appendChild(option);
-    });
-  });
-
-  if (el.identityContactSelect) {
-    const current = state.contacts.find(x => x.id === el.identityContactSelect.value);
-    if (el.identityEmailInput) el.identityEmailInput.value = (current && current.email) || '';
-    if (el.identityPhoneInput) el.identityPhoneInput.value = (current && current.phone) || '';
-  }
-}
-
-// Abre el formulario de identidad canónica con los valores actuales del contacto.
-window.editContactIdentity = (contactId) => {
-  if (!el.identitySetBox) return;
-  populateIdentitySelects();
-  if (el.identityContactSelect) el.identityContactSelect.value = contactId;
-  const contact = state.contacts.find(x => x.id === contactId);
-  if (el.identityEmailInput) el.identityEmailInput.value = (contact && contact.email) || '';
-  if (el.identityPhoneInput) el.identityPhoneInput.value = (contact && contact.phone) || '';
-  el.identitySetBox.classList.remove('hidden');
-  if (el.identitySetBox.scrollIntoView) el.identitySetBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-};
-
-// Busca contactos por email, teléfono o identificador y ofrece fusionarlos dentro del contacto principal.
-async function searchContactsByIdentity() {
-  if (!el.identityQueryInput || !el.identityResults) return;
-
-  const query = el.identityQueryInput.value.trim();
-  if (!query) {
-    alert('Ingresa un email, un teléfono o un identificador para buscar.');
-    return;
-  }
-
-  const targetId = el.identityTargetSelect ? el.identityTargetSelect.value : '';
-  const target = state.contacts.find(c => c.id === targetId);
-  el.identityResults.innerHTML = '<div class="loading-state"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</div>';
-
-  let matches = [];
-  try {
-    matches = await window.conduitAPI.findContactsByIdentity(query) || [];
-  } catch (e) {
-    el.identityResults.innerHTML = `<p style="font-size:12px;color:var(--danger)">Error buscando identidad: ${escapeHTML(e.message)}</p>`;
-    return;
-  }
-
-  if (matches.length === 0) {
-    el.identityResults.innerHTML = `<p style="font-size:12px;color:var(--text-muted)">Ningún contacto coincide con "${escapeHTML(query)}".</p>`;
-    return;
-  }
-
-  const targetName = target ? target.display_name : 'el contacto principal';
-  el.identityResults.innerHTML = matches.map(match => {
-    const channels = (match.channels || []).length;
-    const identity = [match.email, match.phone].filter(Boolean).join(' · ') || 'sin identidad canónica';
-    const isTarget = match.id === targetId;
-
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.04);padding:8px 12px;border-radius:6px;margin-top:6px;gap:12px;">
-        <div>
-          <div style="font-size:13px;font-weight:600;">${escapeHTML(match.display_name || 'Contacto')}</div>
-          <div style="font-size:11px;color:var(--text-dim);">${escapeHTML(identity)} · ${channels} canal(es)</div>
-        </div>
-        ${isTarget
-          ? '<span class="text-muted" style="font-size:11px;">Ya es el contacto principal</span>'
-          : `<button class="btn-card btn-primary" onclick="mergeIdentityMatch('${match.id}')">Fusionar en ${escapeHTML(targetName)}</button>`}
-      </div>
-    `;
-  }).join('');
-}
-
-// Fusiona un resultado de búsqueda de identidad dentro del contacto principal elegido.
-window.mergeIdentityMatch = async (secondaryId) => {
-  const primaryId = el.identityTargetSelect ? el.identityTargetSelect.value : '';
-  if (!primaryId) {
-    alert('Selecciona un contacto principal.');
-    return;
-  }
-  if (primaryId === secondaryId) {
-    alert('Ese contacto ya es el principal.');
-    return;
-  }
+async function syncAllContacts() {
+  if (el.btnSyncContacts) el.btnSyncContacts.disabled = true;
+  if (el.contactsSyncStatus) el.contactsSyncStatus.textContent = 'Sincronizando contactos...';
 
   try {
-    await window.conduitAPI.mergeContacts(primaryId, secondaryId);
+    const res = await window.conduitAPI.syncContacts('', '');
     await loadContacts();
-    await loadConversations();
-    if (el.identityResults) el.identityResults.innerHTML = '<p style="font-size:12px;color:var(--success,#3ba55d)">Contactos fusionados.</p>';
-  } catch (e) {
-    alert('Error fusionando contactos: ' + e.message);
+    if (el.contactsSyncStatus) {
+      const synced = (res && res.synced_count) || 0;
+      const unified = (res && res.unified_count) || 0;
+      el.contactsSyncStatus.textContent = `${synced} sincronizados · ${unified} unificados`;
+    }
+  } catch (err) {
+    console.error('Error syncAllContacts:', err);
+    if (el.contactsSyncStatus) el.contactsSyncStatus.textContent = `Error al sincronizar: ${err.message}`;
+  } finally {
+    if (el.btnSyncContacts) el.btnSyncContacts.disabled = false;
   }
-};
+}
 
-window.splitContactChannel = async (channelId, handle) => {
-  const newName = prompt(`Ingresa el nombre del nuevo contacto individual para el canal (${handle}):`, handle);
-  if (!newName) return;
-
+async function startChatWithChannel(contactId, channelId) {
   try {
-    await window.conduitAPI.splitChannel(channelId, newName);
-    await loadContacts();
-    await loadConversations();
-  } catch (e) {
-    alert('Error desacoplando canal: ' + e.message);
-  }
-};
+    const conv = await window.conduitAPI.startChat(contactId, channelId || '');
+    if (!conv || !conv.id) return;
 
-window.openChatWithContact = (contactId) => {
-  selectConversation(contactId);
-};
+    const existingIdx = state.conversations.findIndex(c => c.id === conv.id);
+    if (existingIdx >= 0) {
+      state.conversations[existingIdx] = conv;
+    } else {
+      state.conversations.unshift(conv);
+    }
+
+    await selectConversation(conv.id);
+    if (el.channelSelect && channelId) {
+      el.channelSelect.value = channelId;
+    }
+  } catch (err) {
+    console.error('Error startChatWithChannel:', err);
+    alert('Error iniciando chat: ' + err.message);
+  }
+}
+window.startChatWithChannel = startChatWithChannel;
 
 // Cargar Plugins
 async function loadPlugins() {
@@ -3064,6 +2978,23 @@ function setupRealtimeEvents() {
     }
     if (envelope.type === 'sync.progress' && envelope.channel_status_update) {
       handleSyncProgressEvent(envelope.channel_status_update);
+      return;
+    }
+    if (envelope.contact_updated && envelope.contact_updated.contact) {
+      const updated = envelope.contact_updated.contact;
+      const idx = state.contacts.findIndex(c => c.id === updated.id);
+      if (idx >= 0) {
+        state.contacts[idx] = updated;
+      } else {
+        state.contacts.push(updated);
+      }
+      renderContactsList();
+      if (state.activeConversationId) {
+        const activeConv = state.conversations.find(c => c.id === state.activeConversationId);
+        if (activeConv && (activeConv.contact_id === updated.id || activeConv.id === updated.id)) {
+          updateChannelSelector(activeConv);
+        }
+      }
       return;
     }
     if (envelope.conversation_read) {
@@ -4175,108 +4106,16 @@ function setupEventListeners() {
     });
   }
 
-  if (el.btnShowMergeModal && el.mergeContactsBox) {
-    el.btnShowMergeModal.addEventListener('click', () => {
-      populateMergeSelects();
-      el.mergeContactsBox.classList.remove('hidden');
-    });
-
-    el.btnCancelMerge.addEventListener('click', () => {
-      el.mergeContactsBox.classList.add('hidden');
-    });
-
-    el.btnSubmitMerge.addEventListener('click', async () => {
-      const primaryId = el.mergePrimarySelect.value;
-      const secondaryId = el.mergeSecondarySelect.value;
-
-      if (!primaryId || !secondaryId) {
-        alert('Selecciona dos contactos para unificar.');
-        return;
-      }
-      if (primaryId === secondaryId) {
-        alert('El contacto principal y secundario no pueden ser el mismo.');
-        return;
-      }
-
-      try {
-        await window.conduitAPI.mergeContacts(primaryId, secondaryId);
-        el.mergeContactsBox.classList.add('hidden');
-        await loadContacts();
-        await loadConversations();
-        alert('✅ Contactos unificados exitosamente.');
-      } catch (e) {
-        alert('Error unificando contactos: ' + e.message);
-      }
+  if (el.contactsSearchInput) {
+    el.contactsSearchInput.addEventListener('input', () => {
+      renderContactsList();
     });
   }
 
-  // Identidad canónica: definir email/teléfono y vincular manualmente por identidad
-  if (el.btnShowIdentityModal && el.identitySetBox) {
-    el.btnShowIdentityModal.addEventListener('click', () => {
-      populateIdentitySelects();
-      el.identitySetBox.classList.remove('hidden');
+  if (el.btnSyncContacts) {
+    el.btnSyncContacts.addEventListener('click', () => {
+      syncAllContacts();
     });
-
-    el.btnCancelIdentity.addEventListener('click', () => {
-      el.identitySetBox.classList.add('hidden');
-    });
-
-    el.btnSaveIdentity.addEventListener('click', async () => {
-      const contactId = el.identityContactSelect ? el.identityContactSelect.value : '';
-      const email = el.identityEmailInput ? el.identityEmailInput.value.trim() : '';
-      const phone = el.identityPhoneInput ? el.identityPhoneInput.value.trim() : '';
-
-      if (!contactId) {
-        alert('Selecciona un contacto.');
-        return;
-      }
-      if (!email && !phone) {
-        alert('Ingresa un email o un teléfono para guardar la identidad.');
-        return;
-      }
-
-      try {
-        await window.conduitAPI.setContactIdentity(contactId, email, phone);
-        el.identitySetBox.classList.add('hidden');
-        await loadContacts();
-        await loadConversations();
-      } catch (e) {
-        alert('No se pudo guardar la identidad: ' + e.message);
-      }
-    });
-
-    if (el.identityContactSelect) {
-      el.identityContactSelect.addEventListener('change', () => {
-        const c = state.contacts.find(x => x.id === el.identityContactSelect.value);
-        if (el.identityEmailInput) el.identityEmailInput.value = (c && c.email) || '';
-        if (el.identityPhoneInput) el.identityPhoneInput.value = (c && c.phone) || '';
-      });
-    }
-  }
-
-  if (el.btnShowLinkIdentityModal && el.identityLinkBox) {
-    el.btnShowLinkIdentityModal.addEventListener('click', () => {
-      populateIdentitySelects();
-      if (el.identityResults) el.identityResults.innerHTML = '';
-      el.identityLinkBox.classList.remove('hidden');
-    });
-
-    el.btnCancelLinkIdentity.addEventListener('click', () => {
-      el.identityLinkBox.classList.add('hidden');
-    });
-
-    el.btnFindIdentity.addEventListener('click', () => {
-      searchContactsByIdentity();
-    });
-
-    if (el.identityQueryInput) {
-      el.identityQueryInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          searchContactsByIdentity();
-        }
-      });
-    }
   }
 
   el.btnPlugins.addEventListener('click', () => {

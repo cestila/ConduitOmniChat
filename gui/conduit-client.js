@@ -293,48 +293,26 @@ class ConduitRpcClient {
     });
   }
 
-  mergeContacts(primaryContactId, secondaryContactId) {
+  syncContacts(provider = '', accountId = '') {
     return new Promise((resolve, reject) => {
-      this.client.MergeContacts({
-        primary_contact_id: primaryContactId,
-        secondary_contact_id: secondaryContactId
+      this.client.SyncContacts({
+        provider: provider || '',
+        account_id: accountId || ''
       }, (err, response) => {
         if (err) return reject(err);
-        resolve(response.merged_contact);
+        resolve(response || { synced_count: 0, unified_count: 0 });
       });
     });
   }
 
-  splitChannel(channelId, newContactName) {
+  startChat(contactId, channelId = '') {
     return new Promise((resolve, reject) => {
-      this.client.SplitChannel({
-        channel_id: channelId,
-        new_contact_name: newContactName
-      }, (err, response) => {
-        if (err) return reject(err);
-        resolve(response.new_contact);
-      });
-    });
-  }
-
-  setContactIdentity(contactId, email, phone) {
-    return new Promise((resolve, reject) => {
-      this.client.SetContactIdentity({
+      this.client.StartChat({
         contact_id: contactId,
-        email: email || '',
-        phone: phone || ''
+        channel_id: channelId || ''
       }, (err, response) => {
         if (err) return reject(err);
-        resolve(response.contact);
-      });
-    });
-  }
-
-  findContactsByIdentity(query) {
-    return new Promise((resolve, reject) => {
-      this.client.FindContactsByIdentity({ query }, (err, response) => {
-        if (err) return reject(err);
-        resolve(response.contacts || []);
+        resolve(response ? response.conversation : null);
       });
     });
   }

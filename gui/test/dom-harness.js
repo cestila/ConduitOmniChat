@@ -174,7 +174,7 @@ function createHarness(fixtures = {}) {
     pinnedMessages = {},
   } = fixtures;
 
-  const calls = { merge: [], identity: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], togglePlugin: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [], fetchLinkPreview: [] };
+  const calls = { merge: [], identity: [], syncContacts: [], startChat: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], togglePlugin: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [], fetchLinkPreview: [] };
 
   const registry = new Map();
   const docListeners = {};
@@ -287,7 +287,27 @@ function createHarness(fixtures = {}) {
       },
       listAccounts: async () => accounts,
       listPlugins: async () => plugins,
-      listContacts: async () => contacts,
+      listContacts: async () => (typeof fixtures.listContacts === 'function' ? fixtures.listContacts() : contacts),
+      syncContacts: async (provider, accountId) => {
+        calls.syncContacts.push([provider, accountId]);
+        if (typeof fixtures.syncContacts === 'function') {
+          return fixtures.syncContacts(provider, accountId);
+        }
+        return fixtures.syncResult || { synced_count: contacts.length, unified_count: 1 };
+      },
+      startChat: async (contactId, channelId) => {
+        calls.startChat.push([contactId, channelId]);
+        if (typeof fixtures.startChat === 'function') {
+          return fixtures.startChat(contactId, channelId);
+        }
+        return {
+          id: `conv-${contactId}`,
+          contact_id: contactId,
+          title: (contacts.find(c => c.id === contactId) || {}).display_name || 'Chat',
+          active_channel_id: channelId,
+          is_group: false,
+        };
+      },
       getSettings: async () => ({}),
       onEvent: (cb) => {
         eventListeners.push(cb);
@@ -428,8 +448,7 @@ function createHarness(fixtures = {}) {
   const exports = [
     'state', 'el',
     'openServer', 'closeServer', 'renderConversations',
-    'renderContactsGrid', 'populateIdentitySelects', 'populateMergeSelects',
-    'searchContactsByIdentity', 'loadContacts',
+    'renderContactsList', 'syncAllContacts', 'startChatWithChannel', 'loadContacts',
     'renderAccountsGrid', 'syncAccountCredentialFields', 'buildAccountCredentials', 'qrCopyFor',
     // Composer multimedios
     'handleSendMessage', 'addPendingAttachment', 'removePendingAttachment',
@@ -459,7 +478,7 @@ function createHarness(fixtures = {}) {
     'shouldNotifyMessage', 'buildNotificationPayload', 'handleDesktopNotification', 'selectConversation',
   ];
   const source = fs.readFileSync(APP_JS, 'utf8')
-    + '\n;' + exports.map(name => `globalThis.__${name} = ${name};`).join(' ');
+    + '\n;' + exports.map(name => `globalThis.__${name} = typeof ${name} !== 'undefined' ? ${name} : undefined;`).join(' ');
 
   vm.runInContext(source, sandbox, { filename: 'app.js' });
 

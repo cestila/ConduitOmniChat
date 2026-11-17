@@ -3044,3 +3044,136 @@ body.compact-mode .msg-avatar {
   background: linear-gradient(90deg, #3b82f6, #60a5fa);
   transition: width 0.2s ease;
 }
+
+/* ==========================================================================
+   Clean Contacts List & Per-Channel Provider/Account Chips
+   ========================================================================== */
+
+.contacts-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.contacts-sync-status {
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.contacts-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.contacts-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.contacts-search-wrap i {
+  position: absolute;
+  left: 10px;
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+}
+
+.contacts-search-wrap .form-input {
+  padding-left: 30px;
+  min-width: 240px;
+}
+
+.contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg-card, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.contact-row:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.contact-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.contact-row-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contact-row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main, #f8fafc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-row-meta {
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-channels-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main, #f8fafc);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.provider-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent-conduit, #60a5fa);
+  transform: translateY(-1px);
+}
+
+.chip-account-label {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted, #cbd5e1);
+}
