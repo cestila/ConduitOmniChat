@@ -2706,7 +2706,12 @@ async function startChatWithChannel(contactId, channelId) {
 
     const existingIdx = state.conversations.findIndex(c => c.id === conv.id);
     if (existingIdx >= 0) {
-      state.conversations[existingIdx] = conv;
+      state.conversations[existingIdx] = {
+        ...state.conversations[existingIdx],
+        ...conv,
+        last_message_preview: conv.last_message_preview || state.conversations[existingIdx].last_message_preview,
+        unread_count: state.conversations[existingIdx].unread_count,
+      };
     } else {
       state.conversations.unshift(conv);
     }
@@ -2714,6 +2719,9 @@ async function startChatWithChannel(contactId, channelId) {
 
     await selectConversation(conv.id);
     showView('view-chat');
+    if (typeof setActiveSidebarPill === 'function' && el.tabAllConvs) {
+      setActiveSidebarPill(el.tabAllConvs);
+    }
     updateChannelSelector(conv);
     if (el.channelSelect && channelId) {
       el.channelSelect.value = channelId;

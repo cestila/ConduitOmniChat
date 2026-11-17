@@ -149,7 +149,17 @@ const initialContacts = [
   check('nueva conversación aparece en el sidebar', el.conversationList.children.some(item => (item.innerHTML || '').includes('Martín Gómez')), `children=${el.conversationList.children.length}`);
 
   // 3b. Regresión: si la conversación ya está activa con mensajes renderizados y el usuario está en view-contacts,
-  // startChatWithChannel debe volver a view-chat, refrescar el selector y seleccionar el nuevo channelId.
+  // startChatWithChannel debe volver a view-chat, refrescar el selector, seleccionar el nuevo channelId,
+  // conservar last_message_preview / unread_count y activar la píldora tabAllConvs.
+  const martinConvIdx = app.state.conversations.findIndex(c => c.id === 'conv-contact-martin');
+  if (martinConvIdx >= 0) {
+    app.state.conversations[martinConvIdx].last_message_preview = 'Hola Martín';
+    app.state.conversations[martinConvIdx].unread_count = 3;
+  }
+  if (typeof app.sandbox.setActiveSidebarPill === 'function') {
+    app.sandbox.setActiveSidebarPill(el.btnContacts);
+  }
+  el.tabAllConvs.classList.remove('active');
   const bubble = app.documentStub.createElement('div');
   bubble.className = 'message-bubble';
   el.messagesContainer.innerHTML = '';
@@ -160,6 +170,10 @@ const initialContacts = [
   await app.startChatWithChannel('contact-martin', 'ch-wa-1');
   check('con conversación ya activa, startChatWithChannel cambia igualmente a view-chat', el.viewChat.classList.contains('active'));
   check('con conversación ya activa, startChatWithChannel preselecciona el nuevo channelId', el.channelSelect.value === 'ch-wa-1', `value=${el.channelSelect.value}`);
+  const mergedConv = app.state.conversations.find(c => c.id === 'conv-contact-martin');
+  check('startChatWithChannel conserva last_message_preview existente', !!mergedConv && mergedConv.last_message_preview === 'Hola Martín', mergedConv && mergedConv.last_message_preview);
+  check('startChatWithChannel conserva unread_count existente', !!mergedConv && mergedConv.unread_count === 3, mergedConv && mergedConv.unread_count);
+  check('startChatWithChannel activa píldora tabAllConvs', el.tabAllConvs.classList.contains('active'));
 
   // 4. Botón Sync Contacts llama syncContacts y refresca state.contacts
   el.btnSyncContacts.click();
