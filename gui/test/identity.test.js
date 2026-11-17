@@ -146,6 +146,20 @@ const initialContacts = [
   check('cambia a la vista de chat', el.viewChat.classList.contains('active'));
   check('activa la conversación devuelta por startChat', app.state.activeConversationId === 'conv-contact-martin', app.state.activeConversationId);
   check('preselecciona channelId en el compositor', el.channelSelect.value === 'ch-wa-2', `value=${el.channelSelect.value}`);
+  check('nueva conversación aparece en el sidebar', el.conversationList.children.some(item => (item.innerHTML || '').includes('Martín Gómez')), `children=${el.conversationList.children.length}`);
+
+  // 3b. Regresión: si la conversación ya está activa con mensajes renderizados y el usuario está en view-contacts,
+  // startChatWithChannel debe volver a view-chat, refrescar el selector y seleccionar el nuevo channelId.
+  const bubble = app.documentStub.createElement('div');
+  bubble.className = 'message-bubble';
+  el.messagesContainer.innerHTML = '';
+  el.messagesContainer.appendChild(bubble);
+  app.sandbox.showView('view-contacts');
+  el.viewChat.classList.remove('active');
+  el.channelSelect.value = '';
+  await app.startChatWithChannel('contact-martin', 'ch-wa-1');
+  check('con conversación ya activa, startChatWithChannel cambia igualmente a view-chat', el.viewChat.classList.contains('active'));
+  check('con conversación ya activa, startChatWithChannel preselecciona el nuevo channelId', el.channelSelect.value === 'ch-wa-1', `value=${el.channelSelect.value}`);
 
   // 4. Botón Sync Contacts llama syncContacts y refresca state.contacts
   el.btnSyncContacts.click();

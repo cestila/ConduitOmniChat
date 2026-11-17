@@ -2710,8 +2710,11 @@ async function startChatWithChannel(contactId, channelId) {
     } else {
       state.conversations.unshift(conv);
     }
+    renderConversations();
 
     await selectConversation(conv.id);
+    showView('view-chat');
+    updateChannelSelector(conv);
     if (el.channelSelect && channelId) {
       el.channelSelect.value = channelId;
     }
