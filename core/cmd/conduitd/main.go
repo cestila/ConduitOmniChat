@@ -135,6 +135,14 @@ func main() {
 					go catchUpRecentMessages(db, pluginManager, bus, plugCfg.Provider, 15)
 					// Reintenta los leídos que no pudieron llegar al proveedor mientras estaba caído.
 					go rpc.FlushPendingReadSyncForProvider(context.Background(), db, pluginManager, plugCfg.Provider)
+					// Sincroniza los contactos de la libreta del proveedor al conectar.
+					go func(providerName string) {
+						syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+						if _, err := rpc.SyncContactsForProvider(syncCtx, db, pluginManager, graph, bus, providerName, ""); err != nil {
+							log.Printf("⚠️ Error sincronizando contactos de %s al conectar: %v", providerName, err)
+						}
+					}(plugCfg.Name)
 
 				case "contact.sync":
 					// Si es un grupo o tema de foro, registrar como conversación independiente SIN tocar la tabla de contactos

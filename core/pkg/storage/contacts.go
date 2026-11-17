@@ -94,9 +94,9 @@ func (d *DB) ListContacts(ctx context.Context) ([]domain.Contact, error) {
 		return contacts, nil
 	}
 
-	chRows, err := d.conn.QueryContext(ctx, `SELECT id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata FROM contact_channels`)
+	chRows, err := d.conn.QueryContext(ctx, `SELECT id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata FROM contact_channels WHERE contact_id <> ''`)
 	if err != nil {
-		return contacts, nil
+		return nil, err
 	}
 	defer chRows.Close()
 
@@ -107,6 +107,9 @@ func (d *DB) ListContacts(ctx context.Context) ([]domain.Contact, error) {
 			return nil, err
 		}
 		channelsByContact[ch.ContactID] = append(channelsByContact[ch.ContactID], ch)
+	}
+	if err := chRows.Err(); err != nil {
+		return nil, err
 	}
 	for i := range contacts {
 		contacts[i].Channels = channelsByContact[contacts[i].ID]
@@ -157,6 +160,9 @@ func (d *DB) SearchContactsByIdentity(ctx context.Context, email, phone, channel
 			return nil, err
 		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	contacts := make([]domain.Contact, 0, len(ids))
@@ -227,6 +233,9 @@ func (d *DB) GetChannelsByContactID(ctx context.Context, contactID string) ([]do
 			return nil, err
 		}
 		list = append(list, ch)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return list, nil
 }
@@ -324,7 +333,25 @@ func (d *DB) CleanupNonPersonContacts(ctx context.Context) (int64, error) {
 		if _, err := tx.ExecContext(ctx, `UPDATE conversations SET contact_id = NULL WHERE contact_id = ?`, id); err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE conversations SET active_channel_id = NULL WHERE active_channel_id IN (SELECT id FROM contact_channels WHERE contact_id = ?)`, id); err != nil {
+		// Preserve channels still referenced by group conversations or historical messages by detaching them.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE contact_channels
+			SET contact_id = ''
+			WHERE contact_id = ?
+			  AND (
+			    id IN (SELECT active_channel_id FROM conversations WHERE active_channel_id IS NOT NULL AND (is_group = 1 OR id LIKE 'whatsapp:%'))
+			    OR id IN (SELECT channel_id FROM messages WHERE channel_id IS NOT NULL)
+			  )
+		`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE conversations
+			SET active_channel_id = NULL
+			WHERE active_channel_id IN (SELECT id FROM contact_channels WHERE contact_id = ?)
+			  AND is_group = 0
+			  AND id NOT LIKE 'whatsapp:%'
+		`, id); err != nil {
 			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM contact_channels WHERE contact_id = ?`, id); err != nil {

@@ -791,17 +791,72 @@ func isNonPersonRemoteID(remoteID string) bool {
 
 // SyncContacts pulls 1:1 contacts from connected plugins and unifies them via the identity graph.
 func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRequest) (*conduitv1.SyncContactsResponse, error) {
-	if s.plugins == nil || s.graph == nil {
+	return SyncContactsForProvider(ctx, s.db, s.plugins, s.graph, s.bus, req.GetProvider(), req.GetAccountId())
+}
+
+func resolveAccountProvider(accounts []*conduitv1.ProtoAccount, accountID string) string {
+	for _, acc := range accounts {
+		if acc.GetId() == accountID {
+			return providerName(domain.Provider(acc.GetProvider().String()))
+		}
+	}
+	return ""
+}
+
+func resolveCanonicalSyncAccountID(accounts []*conduitv1.ProtoAccount, provider, requestedAccountID string) string {
+	normProv := strings.ToLower(provider)
+	if requestedAccountID != "" {
+		for _, acc := range accounts {
+			if providerName(domain.Provider(acc.GetProvider().String())) == normProv && acc.GetId() == requestedAccountID {
+				return acc.GetId()
+			}
+		}
+		return requestedAccountID
+	}
+
+	var fallback string
+	for _, acc := range accounts {
+		if providerName(domain.Provider(acc.GetProvider().String())) != normProv {
+			continue
+		}
+		if acc.GetStatus() == "connected" {
+			return acc.GetId()
+		}
+		if fallback == "" {
+			fallback = acc.GetId()
+		}
+	}
+	return fallback
+}
+
+// SyncContactsForProvider pulls 1:1 contacts from the target provider (or all providers when empty)
+// and resolves them via the identity graph using canonical account IDs from storage.
+func SyncContactsForProvider(ctx context.Context, db *storage.DB, plugins *pluginmgr.Manager, graph *identity.Graph, bus *eventbus.Bus, provider, requestedAccountID string) (*conduitv1.SyncContactsResponse, error) {
+	if plugins == nil || graph == nil {
 		return &conduitv1.SyncContactsResponse{}, nil
 	}
 
+	var accounts []*conduitv1.ProtoAccount
+	if db != nil {
+		accounts, _ = db.ListAccounts(ctx)
+	}
+
+	targetProvider := strings.ToLower(strings.TrimSpace(provider))
+	if targetProvider == "" && requestedAccountID != "" {
+		if owner := resolveAccountProvider(accounts, requestedAccountID); owner != "" {
+			targetProvider = owner
+		} else if len(accounts) > 0 {
+			return &conduitv1.SyncContactsResponse{}, nil
+		}
+	}
+
 	var instances []*pluginmgr.Instance
-	if req.GetProvider() != "" {
-		if inst, ok := s.plugins.GetInstance(strings.ToLower(req.GetProvider())); ok {
+	if targetProvider != "" {
+		if inst, ok := plugins.GetInstance(targetProvider); ok {
 			instances = append(instances, inst)
 		}
 	} else {
-		instances = s.plugins.ListInstances()
+		instances = plugins.ListInstances()
 	}
 
 	var syncedCount int32
@@ -811,9 +866,10 @@ func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRe
 		if inst.RPC == nil {
 			continue
 		}
+		canonicalAccountID := resolveCanonicalSyncAccountID(accounts, inst.Name, requestedAccountID)
 		resp, err := inst.RPC.SyncContacts(ctx, &conduitv1.SyncContactsRequest{
 			Provider:  inst.Name,
-			AccountId: req.GetAccountId(),
+			AccountId: canonicalAccountID,
 		})
 		if err != nil {
 			if status.Code(err) == codes.Unimplemented {
@@ -833,9 +889,9 @@ func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRe
 				continue
 			}
 
-			accountID := pc.GetAccountId()
+			accountID := canonicalAccountID
 			if accountID == "" {
-				accountID = req.GetAccountId()
+				accountID = pc.GetAccountId()
 			}
 			displayName := pc.GetDisplayName()
 			if displayName == "" {
@@ -845,7 +901,7 @@ func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRe
 				displayName = remoteID
 			}
 
-			contact, _, err := s.graph.ResolveOrLinkChannel(
+			contact, _, err := graph.ResolveOrLinkChannel(
 				ctx,
 				domain.Provider(inst.Name),
 				accountID,
@@ -866,8 +922,8 @@ func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRe
 			syncedCount++
 			if contact != nil {
 				unifiedContacts[contact.ID] = struct{}{}
-				if s.bus != nil {
-					s.bus.Publish(eventbus.EventContactUpdated, contact)
+				if bus != nil {
+					bus.Publish(eventbus.EventContactUpdated, contact)
 				}
 			}
 		}
@@ -911,7 +967,9 @@ func (s *Server) StartChat(ctx context.Context, req *conduitv1.StartChatRequest)
 	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "error ensuring conversation: %v", err)
 	}
-	_ = s.db.SetConversationActiveChannel(ctx, contact.ID, channel.ID)
+	if err := s.db.SetConversationActiveChannel(ctx, contact.ID, channel.ID); err != nil {
+		return nil, status.Errorf(codes.Internal, "error setting active channel: %v", err)
+	}
 
 	conv, err := s.db.GetConversationByID(ctx, contact.ID)
 	if err != nil {

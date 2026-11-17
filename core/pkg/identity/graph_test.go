@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -503,5 +504,49 @@ func TestResolveOrLinkChannelMultipleLocalAccountsSameProvider(t *testing.T) {
 	}
 	if len(c2.Channels) != 2 {
 		t.Fatalf("se esperaban 2 canales en el contacto unificado, obtuvo %d", len(c2.Channels))
+	}
+}
+
+func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	const workers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	contactIDs := make(chan string, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			var c *domain.Contact
+			var err error
+			if idx%2 == 0 {
+				c, _, err = graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "wa-1", "5491112345678@s.whatsapp.net", "", "Martín", "", Hints{})
+			} else {
+				c, _, err = graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "tg-1", "u999", "martin", "Martín TG", "", Hints{Phone: "+5491112345678"})
+			}
+			if err != nil {
+				errs <- err
+				return
+			}
+			contactIDs <- c.ID
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	close(contactIDs)
+
+	for err := range errs {
+		t.Fatalf("concurrent ResolveOrLinkChannel failed: %v", err)
+	}
+	var firstID string
+	for id := range contactIDs {
+		if firstID == "" {
+			firstID = id
+		} else if id != firstID {
+			t.Fatalf("expected unified contact ID %s, got %s", firstID, id)
+		}
 	}
 }

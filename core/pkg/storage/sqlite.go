@@ -186,6 +186,10 @@ func (d *DB) migrate() error {
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_conversations_last_msg ON conversations(last_message_at DESC);")
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);")
 
+	if err := d.EnsureAccountAndSettingsTables(); err != nil {
+		return err
+	}
+
 	if err := d.migrateContactChannelsAccountID(); err != nil {
 		return fmt.Errorf("error migrando account_id en contact_channels: %w", err)
 	}
@@ -248,18 +252,15 @@ func (d *DB) migrateContactChannelsAccountID() error {
 		}
 	}
 	rows.Close()
-	if hasAccountID {
-		return nil
-	}
+	if !hasAccountID {
+		tx, err := d.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
 
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	stmts := []string{
-		`CREATE TABLE contact_channels_new (
+		stmts := []string{
+			`CREATE TABLE contact_channels_new (
 			id TEXT PRIMARY KEY,
 			contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
 			provider TEXT NOT NULL,
@@ -270,17 +271,71 @@ func (d *DB) migrateContactChannelsAccountID() error {
 			metadata TEXT,
 			UNIQUE(provider, account_id, remote_id)
 		);`,
-		`INSERT INTO contact_channels_new (id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata)
+			`INSERT INTO contact_channels_new (id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata)
 		 SELECT id, contact_id, provider, '', remote_id, handle, is_preferred, metadata FROM contact_channels;`,
-		`DROP TABLE contact_channels;`,
-		`ALTER TABLE contact_channels_new RENAME TO contact_channels;`,
-	}
-	for _, stmt := range stmts {
-		if _, err := tx.Exec(stmt); err != nil {
+			`DROP TABLE contact_channels;`,
+			`ALTER TABLE contact_channels_new RENAME TO contact_channels;`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+
+	return d.backfillContactChannelsAccountID()
+}
+
+// backfillContactChannelsAccountID assigns legacy contact_channels rows with empty account_id
+// to the primary (connected or first) account for that provider when one exists.
+func (d *DB) backfillContactChannelsAccountID() error {
+	accRows, err := d.conn.Query(`
+		SELECT id, LOWER(provider)
+		FROM accounts
+		ORDER BY CASE WHEN status = 'connected' THEN 0 ELSE 1 END, created_at ASC
+	`)
+	if err != nil {
+		return err
+	}
+	primaryByProvider := make(map[string]string)
+	for accRows.Next() {
+		var id, prov string
+		if err := accRows.Scan(&id, &prov); err != nil {
+			accRows.Close()
+			return err
+		}
+		if prov != "" && id != "" {
+			if _, exists := primaryByProvider[prov]; !exists {
+				primaryByProvider[prov] = id
+			}
+		}
+	}
+	if err := accRows.Err(); err != nil {
+		accRows.Close()
+		return err
+	}
+	accRows.Close()
+
+	for prov, accID := range primaryByProvider {
+		if _, err := d.conn.Exec(`
+			UPDATE contact_channels
+			SET account_id = ?
+			WHERE provider = ?
+			  AND account_id = ''
+			  AND NOT EXISTS (
+				SELECT 1 FROM contact_channels cc2
+				WHERE cc2.provider = contact_channels.provider
+				  AND cc2.account_id = ?
+				  AND cc2.remote_id = contact_channels.remote_id
+			  )
+		`, accID, prov, accID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cleanupAndMergeWhatsAppLIDs unifica contactos y conversaciones duplicadas entre canales @lid y @s.whatsapp.net,

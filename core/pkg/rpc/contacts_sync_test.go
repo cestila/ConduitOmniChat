@@ -19,11 +19,15 @@ import (
 
 type mockSyncPluginClient struct {
 	conduitv1.PluginServiceClient
-	resp *conduitv1.PluginSyncContactsResponse
-	err  error
+	resp    *conduitv1.PluginSyncContactsResponse
+	err     error
+	calls   int
+	lastReq *conduitv1.SyncContactsRequest
 }
 
 func (m *mockSyncPluginClient) SyncContacts(ctx context.Context, in *conduitv1.SyncContactsRequest, opts ...grpc.CallOption) (*conduitv1.PluginSyncContactsResponse, error) {
+	m.calls++
+	m.lastReq = in
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -234,5 +238,103 @@ func TestStartChatCreatesConversationWithSelectedChannel(t *testing.T) {
 	}
 	if conv.GetActiveChannelId() != "channel-a" {
 		t.Fatalf("expected ActiveChannelId=channel-a, got %q", conv.GetActiveChannelId())
+	}
+}
+
+func TestSyncContactsUsesCanonicalAccountIDWithoutDuplicates(t *testing.T) {
+	srv, db, _, mgr := newContactsTestServer(t)
+	ctx := context.Background()
+
+	if err := db.SaveAccount(ctx, &conduitv1.ProtoAccount{
+		Id:         "tg-uuid-1",
+		Provider:   conduitv1.Provider_PROVIDER_TELEGRAM,
+		Label:      "Personal",
+		Identifier: "default",
+		Status:     "connected",
+	}); err != nil {
+		t.Fatalf("SaveAccount failed: %v", err)
+	}
+
+	// Simulate prior contact.sync event from conduitd using canonical acc.Id ("tg-uuid-1").
+	if _, _, err := srv.graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "tg-uuid-1", "u1001", "@ada", "Ada", "", identity.Hints{Phone: "+5491122334455"}); err != nil {
+		t.Fatalf("ResolveOrLinkChannel failed: %v", err)
+	}
+
+	tgMock := &mockSyncPluginClient{
+		resp: &conduitv1.PluginSyncContactsResponse{
+			Contacts: []*conduitv1.PluginContact{
+				{
+					AccountId:   "default", // Plugin might echo identifier or empty; Server must use canonical acc.Id.
+					RemoteId:    "u1001",
+					DisplayName: "Ada Lovelace",
+					Handle:      "@ada",
+					Phone:       "+5491122334455",
+				},
+			},
+		},
+	}
+	mgr.RegisterInstance("telegram", &pluginmgr.Instance{Name: "telegram", RPC: tgMock})
+
+	if _, err := srv.SyncContacts(ctx, &conduitv1.SyncContactsRequest{}); err != nil {
+		t.Fatalf("SyncContacts failed: %v", err)
+	}
+
+	if tgMock.lastReq == nil || tgMock.lastReq.GetAccountId() != "tg-uuid-1" {
+		t.Fatalf("expected plugin SyncContacts to receive canonical AccountId=tg-uuid-1, got %+v", tgMock.lastReq)
+	}
+
+	contacts, err := db.ListContacts(ctx)
+	if err != nil {
+		t.Fatalf("ListContacts failed: %v", err)
+	}
+	if len(contacts) != 1 {
+		t.Fatalf("expected 1 contact, got %d", len(contacts))
+	}
+	if len(contacts[0].Channels) != 1 {
+		t.Fatalf("expected 1 channel (no duplicate for same account), got %d: %+v", len(contacts[0].Channels), contacts[0].Channels)
+	}
+	if contacts[0].Channels[0].AccountID != "tg-uuid-1" {
+		t.Fatalf("expected channel AccountID=tg-uuid-1, got %q", contacts[0].Channels[0].AccountID)
+	}
+}
+
+func TestSyncContactsScopesAccountIdToOwningProvider(t *testing.T) {
+	srv, db, _, mgr := newContactsTestServer(t)
+	ctx := context.Background()
+
+	_ = db.SaveAccount(ctx, &conduitv1.ProtoAccount{
+		Id:         "wa-uuid-1",
+		Provider:   conduitv1.Provider_PROVIDER_WHATSAPP,
+		Label:      "WA",
+		Identifier: "+549110001",
+		Status:     "connected",
+	})
+	_ = db.SaveAccount(ctx, &conduitv1.ProtoAccount{
+		Id:         "tg-uuid-1",
+		Provider:   conduitv1.Provider_PROVIDER_TELEGRAM,
+		Label:      "TG",
+		Identifier: "default",
+		Status:     "connected",
+	})
+
+	waMock := &mockSyncPluginClient{resp: &conduitv1.PluginSyncContactsResponse{}}
+	tgMock := &mockSyncPluginClient{resp: &conduitv1.PluginSyncContactsResponse{}}
+	mgr.RegisterInstance("whatsapp", &pluginmgr.Instance{Name: "whatsapp", RPC: waMock})
+	mgr.RegisterInstance("telegram", &pluginmgr.Instance{Name: "telegram", RPC: tgMock})
+
+	if _, err := srv.SyncContacts(ctx, &conduitv1.SyncContactsRequest{
+		AccountId: "tg-uuid-1",
+	}); err != nil {
+		t.Fatalf("SyncContacts failed: %v", err)
+	}
+
+	if waMock.calls != 0 {
+		t.Fatalf("expected whatsapp plugin NOT to be called for telegram account, got %d calls", waMock.calls)
+	}
+	if tgMock.calls != 1 {
+		t.Fatalf("expected telegram plugin to be called once, got %d calls", tgMock.calls)
+	}
+	if tgMock.lastReq.GetAccountId() != "tg-uuid-1" {
+		t.Fatalf("expected telegram plugin to receive tg-uuid-1, got %q", tgMock.lastReq.GetAccountId())
 	}
 }

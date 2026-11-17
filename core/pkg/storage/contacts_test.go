@@ -119,12 +119,26 @@ func TestCleanupLegacyNonPersonContacts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("error guardando ch-group-1: %v", err)
 	}
+	chGroupID := "ch-group-1"
 	if err := db.EnsureConversation(ctx, &domain.Conversation{
-		ID:      "whatsapp:12345@g.us",
-		IsGroup: true,
-		Title:   "Familia",
+		ID:              "whatsapp:12345@g.us",
+		IsGroup:         true,
+		Title:           "Familia",
+		ActiveChannelID: &chGroupID,
 	}); err != nil {
 		t.Fatalf("error guardando conversación de grupo: %v", err)
+	}
+	if err := db.SaveMessage(ctx, &domain.Message{
+		ID:              "msg-group-1",
+		ConversationID:  "whatsapp:12345@g.us",
+		ChannelID:       chGroupID,
+		RemoteMessageID: "remote-msg-group-1",
+		SenderType:      domain.SenderContact,
+		Body:            "Hola grupo",
+		ContentType:     domain.ContentTypeText,
+		Status:          domain.StatusDelivered,
+	}); err != nil {
+		t.Fatalf("error guardando mensaje de grupo: %v", err)
 	}
 
 	deleted, err := db.CleanupNonPersonContacts(ctx)
@@ -148,6 +162,25 @@ func TestCleanupLegacyNonPersonContacts(t *testing.T) {
 	}
 	if !conv.IsGroup || conv.Title != "Familia" {
 		t.Fatalf("conversación de grupo alterada: %+v", conv)
+	}
+	if conv.GetActiveChannelId() != chGroupID {
+		t.Fatalf("se esperaba active_channel_id=%q permaneciera intacto, obtuvo %q", chGroupID, conv.GetActiveChannelId())
+	}
+
+	detachedCh, err := db.GetChannelByID(ctx, chGroupID)
+	if err != nil {
+		t.Fatalf("se esperaba que el canal de grupo %q permaneciera en DB: %v", chGroupID, err)
+	}
+	if detachedCh.ContactID != "" {
+		t.Fatalf("se esperaba que el canal de grupo quedara desacoplado (contact_id=''), obtuvo %q", detachedCh.ContactID)
+	}
+
+	var msgChannelID string
+	if err := db.conn.QueryRowContext(ctx, `SELECT channel_id FROM messages WHERE id = 'msg-group-1'`).Scan(&msgChannelID); err != nil {
+		t.Fatalf("error consultando mensaje de grupo: %v", err)
+	}
+	if msgChannelID != chGroupID {
+		t.Fatalf("se esperaba messages.channel_id=%q, obtuvo %q", chGroupID, msgChannelID)
 	}
 }
 
@@ -211,5 +244,69 @@ func TestContactChannelsMigrationAndListContactsBatchLoad(t *testing.T) {
 	}
 	if len(contacts) != 1 || len(contacts[0].Channels) != 2 {
 		t.Fatalf("se esperaba 1 contacto con 2 canales en ListContacts, obtuvo %+v", contacts)
+	}
+}
+
+func TestMigrateContactChannelsBackfillsEmptyAccountID(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "backfill_channels.db")
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("error creando db: %v", err)
+	}
+	seed := `
+	CREATE TABLE accounts (
+		id TEXT PRIMARY KEY,
+		provider TEXT NOT NULL,
+		label TEXT NOT NULL,
+		identifier TEXT,
+		status TEXT NOT NULL,
+		qr_code TEXT,
+		credentials TEXT,
+		status_message TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE contacts (
+		id TEXT PRIMARY KEY,
+		display_name TEXT NOT NULL,
+		avatar_url TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE contact_channels (
+		id TEXT PRIMARY KEY,
+		contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+		provider TEXT NOT NULL,
+		account_id TEXT NOT NULL DEFAULT '',
+		remote_id TEXT NOT NULL,
+		handle TEXT,
+		is_preferred BOOLEAN DEFAULT FALSE,
+		metadata TEXT,
+		UNIQUE(provider, account_id, remote_id)
+	);
+	INSERT INTO accounts (id, provider, label, identifier, status)
+	VALUES ('acc-tg-uuid', 'TELEGRAM', 'Mi TG', 'default', 'connected');
+	INSERT INTO contacts (id, display_name) VALUES ('c1', 'Ada');
+	INSERT INTO contact_channels (id, contact_id, provider, account_id, remote_id, handle)
+	VALUES ('ch-tg-legacy', 'c1', 'telegram', '', 'u1001', '@ada');
+	`
+	if _, err := raw.Exec(seed); err != nil {
+		raw.Close()
+		t.Fatalf("error sembrando db: %v", err)
+	}
+	raw.Close()
+
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("error abriendo db con migración: %v", err)
+	}
+	defer db.Close()
+
+	ch, err := db.GetChannelByID(context.Background(), "ch-tg-legacy")
+	if err != nil {
+		t.Fatalf("error leyendo ch-tg-legacy: %v", err)
+	}
+	if ch.AccountID != "acc-tg-uuid" {
+		t.Fatalf("se esperaba account_id='acc-tg-uuid' tras backfill, obtuvo %q", ch.AccountID)
 	}
 }

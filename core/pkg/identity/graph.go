@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
@@ -13,6 +14,7 @@ import (
 
 // Graph coordina la vinculación, resolución, fusión y desacople de identidades multicanal.
 type Graph struct {
+	mu sync.Mutex
 	db *storage.DB
 }
 
@@ -33,6 +35,9 @@ type Hints struct {
 // El teléfono y el email canónicos mandan sobre el identificador del proveedor: si la
 // identidad ya pertenece a otro contacto, ambos se fusionan en el dueño de la identidad.
 func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provider, accountID, rawRemoteID, handle, displayName, avatarURL string, hints Hints) (*domain.Contact, *domain.ContactChannel, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	normRemoteID := NormalizeIdentifier(rawRemoteID)
 
 	identifierEmail := NormalizeEmail(rawRemoteID)
