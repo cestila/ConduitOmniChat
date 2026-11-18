@@ -38,6 +38,10 @@ const (
 	ConduitService_ListPlugins_FullMethodName            = "/conduit.v1.ConduitService/ListPlugins"
 	ConduitService_InstallPlugin_FullMethodName          = "/conduit.v1.ConduitService/InstallPlugin"
 	ConduitService_TogglePlugin_FullMethodName           = "/conduit.v1.ConduitService/TogglePlugin"
+	ConduitService_UninstallPlugin_FullMethodName        = "/conduit.v1.ConduitService/UninstallPlugin"
+	ConduitService_UpdatePlugin_FullMethodName           = "/conduit.v1.ConduitService/UpdatePlugin"
+	ConduitService_CheckUpdates_FullMethodName           = "/conduit.v1.ConduitService/CheckUpdates"
+	ConduitService_MarkPluginsSeen_FullMethodName        = "/conduit.v1.ConduitService/MarkPluginsSeen"
 	ConduitService_GetSettings_FullMethodName            = "/conduit.v1.ConduitService/GetSettings"
 	ConduitService_UpdateSettings_FullMethodName         = "/conduit.v1.ConduitService/UpdateSettings"
 	ConduitService_GetStatus_FullMethodName              = "/conduit.v1.ConduitService/GetStatus"
@@ -86,6 +90,10 @@ type ConduitServiceClient interface {
 	ListPlugins(ctx context.Context, in *ListPluginsRequest, opts ...grpc.CallOption) (*ListPluginsResponse, error)
 	InstallPlugin(ctx context.Context, in *InstallPluginRequest, opts ...grpc.CallOption) (*InstallPluginResponse, error)
 	TogglePlugin(ctx context.Context, in *TogglePluginRequest, opts ...grpc.CallOption) (*TogglePluginResponse, error)
+	UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error)
+	UpdatePlugin(ctx context.Context, in *UpdatePluginRequest, opts ...grpc.CallOption) (*UpdatePluginResponse, error)
+	CheckUpdates(ctx context.Context, in *CheckUpdatesRequest, opts ...grpc.CallOption) (*CheckUpdatesResponse, error)
+	MarkPluginsSeen(ctx context.Context, in *MarkPluginsSeenRequest, opts ...grpc.CallOption) (*MarkPluginsSeenResponse, error)
 	// Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
 	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
@@ -314,6 +322,46 @@ func (c *conduitServiceClient) TogglePlugin(ctx context.Context, in *TogglePlugi
 	return out, nil
 }
 
+func (c *conduitServiceClient) UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UninstallPluginResponse)
+	err := c.cc.Invoke(ctx, ConduitService_UninstallPlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) UpdatePlugin(ctx context.Context, in *UpdatePluginRequest, opts ...grpc.CallOption) (*UpdatePluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePluginResponse)
+	err := c.cc.Invoke(ctx, ConduitService_UpdatePlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) CheckUpdates(ctx context.Context, in *CheckUpdatesRequest, opts ...grpc.CallOption) (*CheckUpdatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckUpdatesResponse)
+	err := c.cc.Invoke(ctx, ConduitService_CheckUpdates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) MarkPluginsSeen(ctx context.Context, in *MarkPluginsSeenRequest, opts ...grpc.CallOption) (*MarkPluginsSeenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkPluginsSeenResponse)
+	err := c.cc.Invoke(ctx, ConduitService_MarkPluginsSeen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *conduitServiceClient) GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetSettingsResponse)
@@ -459,6 +507,10 @@ type ConduitServiceServer interface {
 	ListPlugins(context.Context, *ListPluginsRequest) (*ListPluginsResponse, error)
 	InstallPlugin(context.Context, *InstallPluginRequest) (*InstallPluginResponse, error)
 	TogglePlugin(context.Context, *TogglePluginRequest) (*TogglePluginResponse, error)
+	UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error)
+	UpdatePlugin(context.Context, *UpdatePluginRequest) (*UpdatePluginResponse, error)
+	CheckUpdates(context.Context, *CheckUpdatesRequest) (*CheckUpdatesResponse, error)
+	MarkPluginsSeen(context.Context, *MarkPluginsSeenRequest) (*MarkPluginsSeenResponse, error)
 	// Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
 	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
@@ -544,6 +596,18 @@ func (UnimplementedConduitServiceServer) InstallPlugin(context.Context, *Install
 }
 func (UnimplementedConduitServiceServer) TogglePlugin(context.Context, *TogglePluginRequest) (*TogglePluginResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TogglePlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UninstallPlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) UpdatePlugin(context.Context, *UpdatePluginRequest) (*UpdatePluginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) CheckUpdates(context.Context, *CheckUpdatesRequest) (*CheckUpdatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckUpdates not implemented")
+}
+func (UnimplementedConduitServiceServer) MarkPluginsSeen(context.Context, *MarkPluginsSeenRequest) (*MarkPluginsSeenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkPluginsSeen not implemented")
 }
 func (UnimplementedConduitServiceServer) GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSettings not implemented")
@@ -934,6 +998,78 @@ func _ConduitService_TogglePlugin_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConduitService_UninstallPlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UninstallPluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).UninstallPlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_UninstallPlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).UninstallPlugin(ctx, req.(*UninstallPluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_UpdatePlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).UpdatePlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_UpdatePlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).UpdatePlugin(ctx, req.(*UpdatePluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_CheckUpdates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckUpdatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).CheckUpdates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_CheckUpdates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).CheckUpdates(ctx, req.(*CheckUpdatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_MarkPluginsSeen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkPluginsSeenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).MarkPluginsSeen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_MarkPluginsSeen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).MarkPluginsSeen(ctx, req.(*MarkPluginsSeenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ConduitService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetSettingsRequest)
 	if err := dec(in); err != nil {
@@ -1210,6 +1346,22 @@ var ConduitService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TogglePlugin",
 			Handler:    _ConduitService_TogglePlugin_Handler,
+		},
+		{
+			MethodName: "UninstallPlugin",
+			Handler:    _ConduitService_UninstallPlugin_Handler,
+		},
+		{
+			MethodName: "UpdatePlugin",
+			Handler:    _ConduitService_UpdatePlugin_Handler,
+		},
+		{
+			MethodName: "CheckUpdates",
+			Handler:    _ConduitService_CheckUpdates_Handler,
+		},
+		{
+			MethodName: "MarkPluginsSeen",
+			Handler:    _ConduitService_MarkPluginsSeen_Handler,
 		},
 		{
 			MethodName: "GetSettings",

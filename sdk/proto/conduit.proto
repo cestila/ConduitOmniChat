@@ -44,6 +44,10 @@ service ConduitService {
   rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
   rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
   rpc TogglePlugin(TogglePluginRequest) returns (TogglePluginResponse);
+  rpc UninstallPlugin(UninstallPluginRequest) returns (UninstallPluginResponse);
+  rpc UpdatePlugin(UpdatePluginRequest) returns (UpdatePluginResponse);
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse);
+  rpc MarkPluginsSeen(MarkPluginsSeenRequest) returns (MarkPluginsSeenResponse);
 
   // Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
@@ -405,6 +409,8 @@ message GetStatusResponse {
   string core_version = 1;
   int64 uptime_seconds = 2;
   map<string, string> channel_statuses = 3;
+  uint32 protocol_version = 4;
+  string tui_version = 5;
 }
 
 // ProviderCredentials agrupa las credenciales que cada proveedor real necesita.
@@ -566,6 +572,15 @@ message ProtoPluginInfo {
   PluginManifest manifest = 8; // set when the plugin is installed and running
   string repository = 9;       // GitHub owner/repo used by the installer
   string path = 10;            // binary path when installed
+  string latest_version = 11;
+  bool update_available = 12;
+  bool is_new = 13;
+  bool compatible = 14;
+  string incompatibility_reason = 15;
+  bool managed_externally = 16;
+  bool is_third_party = 17;
+  string release_url = 18;
+  repeated string dependencies = 19;
 }
 
 message ListPluginsRequest {}
@@ -576,6 +591,7 @@ message ListPluginsResponse {
 
 message InstallPluginRequest {
   string plugin_id = 1;
+  string version = 2; // optional: specific release tag/version; empty installs latest
 }
 
 message InstallPluginResponse {
@@ -589,6 +605,60 @@ message TogglePluginRequest {
 }
 
 message TogglePluginResponse {
+  bool success = 1;
+}
+
+message UninstallPluginRequest {
+  string plugin_id = 1;
+}
+
+message UninstallPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UpdatePluginRequest {
+  string plugin_id = 1;
+  bool all = 2;
+}
+
+message PluginUpdateResult {
+  string plugin_id = 1;
+  bool success = 2;
+  string message = 3;
+  string from_version = 4;
+  string to_version = 5;
+}
+
+message UpdatePluginResponse {
+  bool success = 1;
+  string message = 2;
+  repeated PluginUpdateResult results = 3;
+}
+
+message CheckUpdatesRequest {
+  bool force_refresh = 1;
+}
+
+message CheckUpdatesResponse {
+  bool registry_reachable = 1;
+  string core_latest_version = 2;
+  string core_release_url = 3;
+  bool core_update_available = 4;
+  string gui_latest_version = 5;
+  string gui_release_url = 6;
+  bool gui_update_available = 7;
+  repeated ProtoPluginInfo plugins = 8;
+  int32 updates_available_count = 9;
+  int32 new_plugins_count = 10;
+  string checked_at = 11;
+}
+
+message MarkPluginsSeenRequest {
+  repeated string plugin_ids = 1; // optional: empty marks all current catalog plugins as seen
+}
+
+message MarkPluginsSeenResponse {
   bool success = 1;
 }
 

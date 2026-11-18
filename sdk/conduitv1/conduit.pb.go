@@ -2957,6 +2957,8 @@ type GetStatusResponse struct {
 	CoreVersion     string                 `protobuf:"bytes,1,opt,name=core_version,json=coreVersion,proto3" json:"core_version,omitempty"`
 	UptimeSeconds   int64                  `protobuf:"varint,2,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
 	ChannelStatuses map[string]string      `protobuf:"bytes,3,rep,name=channel_statuses,json=channelStatuses,proto3" json:"channel_statuses,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ProtocolVersion uint32                 `protobuf:"varint,4,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	TuiVersion      string                 `protobuf:"bytes,5,opt,name=tui_version,json=tuiVersion,proto3" json:"tui_version,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -3010,6 +3012,20 @@ func (x *GetStatusResponse) GetChannelStatuses() map[string]string {
 		return x.ChannelStatuses
 	}
 	return nil
+}
+
+func (x *GetStatusResponse) GetProtocolVersion() uint32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetTuiVersion() string {
+	if x != nil {
+		return x.TuiVersion
+	}
+	return ""
 }
 
 // ProviderCredentials agrupa las credenciales que cada proveedor real necesita.
@@ -4436,19 +4452,28 @@ func (x *DisconnectAccountResponse) GetSuccess() bool {
 
 // Modelos y Mensajes de Plugins y Marketplace
 type ProtoPluginInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
-	Author        string                 `protobuf:"bytes,5,opt,name=author,proto3" json:"author,omitempty"`
-	IsInstalled   bool                   `protobuf:"varint,6,opt,name=is_installed,json=isInstalled,proto3" json:"is_installed,omitempty"`
-	IsEnabled     bool                   `protobuf:"varint,7,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
-	Manifest      *PluginManifest        `protobuf:"bytes,8,opt,name=manifest,proto3" json:"manifest,omitempty"`     // set when the plugin is installed and running
-	Repository    string                 `protobuf:"bytes,9,opt,name=repository,proto3" json:"repository,omitempty"` // GitHub owner/repo used by the installer
-	Path          string                 `protobuf:"bytes,10,opt,name=path,proto3" json:"path,omitempty"`            // binary path when installed
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Id                    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name                  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description           string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Version               string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Author                string                 `protobuf:"bytes,5,opt,name=author,proto3" json:"author,omitempty"`
+	IsInstalled           bool                   `protobuf:"varint,6,opt,name=is_installed,json=isInstalled,proto3" json:"is_installed,omitempty"`
+	IsEnabled             bool                   `protobuf:"varint,7,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
+	Manifest              *PluginManifest        `protobuf:"bytes,8,opt,name=manifest,proto3" json:"manifest,omitempty"`     // set when the plugin is installed and running
+	Repository            string                 `protobuf:"bytes,9,opt,name=repository,proto3" json:"repository,omitempty"` // GitHub owner/repo used by the installer
+	Path                  string                 `protobuf:"bytes,10,opt,name=path,proto3" json:"path,omitempty"`            // binary path when installed
+	LatestVersion         string                 `protobuf:"bytes,11,opt,name=latest_version,json=latestVersion,proto3" json:"latest_version,omitempty"`
+	UpdateAvailable       bool                   `protobuf:"varint,12,opt,name=update_available,json=updateAvailable,proto3" json:"update_available,omitempty"`
+	IsNew                 bool                   `protobuf:"varint,13,opt,name=is_new,json=isNew,proto3" json:"is_new,omitempty"`
+	Compatible            bool                   `protobuf:"varint,14,opt,name=compatible,proto3" json:"compatible,omitempty"`
+	IncompatibilityReason string                 `protobuf:"bytes,15,opt,name=incompatibility_reason,json=incompatibilityReason,proto3" json:"incompatibility_reason,omitempty"`
+	ManagedExternally     bool                   `protobuf:"varint,16,opt,name=managed_externally,json=managedExternally,proto3" json:"managed_externally,omitempty"`
+	IsThirdParty          bool                   `protobuf:"varint,17,opt,name=is_third_party,json=isThirdParty,proto3" json:"is_third_party,omitempty"`
+	ReleaseUrl            string                 `protobuf:"bytes,18,opt,name=release_url,json=releaseUrl,proto3" json:"release_url,omitempty"`
+	Dependencies          []string               `protobuf:"bytes,19,rep,name=dependencies,proto3" json:"dependencies,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ProtoPluginInfo) Reset() {
@@ -4551,6 +4576,69 @@ func (x *ProtoPluginInfo) GetPath() string {
 	return ""
 }
 
+func (x *ProtoPluginInfo) GetLatestVersion() string {
+	if x != nil {
+		return x.LatestVersion
+	}
+	return ""
+}
+
+func (x *ProtoPluginInfo) GetUpdateAvailable() bool {
+	if x != nil {
+		return x.UpdateAvailable
+	}
+	return false
+}
+
+func (x *ProtoPluginInfo) GetIsNew() bool {
+	if x != nil {
+		return x.IsNew
+	}
+	return false
+}
+
+func (x *ProtoPluginInfo) GetCompatible() bool {
+	if x != nil {
+		return x.Compatible
+	}
+	return false
+}
+
+func (x *ProtoPluginInfo) GetIncompatibilityReason() string {
+	if x != nil {
+		return x.IncompatibilityReason
+	}
+	return ""
+}
+
+func (x *ProtoPluginInfo) GetManagedExternally() bool {
+	if x != nil {
+		return x.ManagedExternally
+	}
+	return false
+}
+
+func (x *ProtoPluginInfo) GetIsThirdParty() bool {
+	if x != nil {
+		return x.IsThirdParty
+	}
+	return false
+}
+
+func (x *ProtoPluginInfo) GetReleaseUrl() string {
+	if x != nil {
+		return x.ReleaseUrl
+	}
+	return ""
+}
+
+func (x *ProtoPluginInfo) GetDependencies() []string {
+	if x != nil {
+		return x.Dependencies
+	}
+	return nil
+}
+
 type ListPluginsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -4634,6 +4722,7 @@ func (x *ListPluginsResponse) GetPlugins() []*ProtoPluginInfo {
 type InstallPluginRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PluginId      string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"` // optional: specific release tag/version; empty installs latest
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4671,6 +4760,13 @@ func (*InstallPluginRequest) Descriptor() ([]byte, []int) {
 func (x *InstallPluginRequest) GetPluginId() string {
 	if x != nil {
 		return x.PluginId
+	}
+	return ""
+}
+
+func (x *InstallPluginRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
 	}
 	return ""
 }
@@ -4823,6 +4919,546 @@ func (x *TogglePluginResponse) GetSuccess() bool {
 	return false
 }
 
+type UninstallPluginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PluginId      string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UninstallPluginRequest) Reset() {
+	*x = UninstallPluginRequest{}
+	mi := &file_conduit_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UninstallPluginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UninstallPluginRequest) ProtoMessage() {}
+
+func (x *UninstallPluginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UninstallPluginRequest.ProtoReflect.Descriptor instead.
+func (*UninstallPluginRequest) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *UninstallPluginRequest) GetPluginId() string {
+	if x != nil {
+		return x.PluginId
+	}
+	return ""
+}
+
+type UninstallPluginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UninstallPluginResponse) Reset() {
+	*x = UninstallPluginResponse{}
+	mi := &file_conduit_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UninstallPluginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UninstallPluginResponse) ProtoMessage() {}
+
+func (x *UninstallPluginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UninstallPluginResponse.ProtoReflect.Descriptor instead.
+func (*UninstallPluginResponse) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *UninstallPluginResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *UninstallPluginResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type UpdatePluginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PluginId      string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	All           bool                   `protobuf:"varint,2,opt,name=all,proto3" json:"all,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePluginRequest) Reset() {
+	*x = UpdatePluginRequest{}
+	mi := &file_conduit_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePluginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePluginRequest) ProtoMessage() {}
+
+func (x *UpdatePluginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePluginRequest.ProtoReflect.Descriptor instead.
+func (*UpdatePluginRequest) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *UpdatePluginRequest) GetPluginId() string {
+	if x != nil {
+		return x.PluginId
+	}
+	return ""
+}
+
+func (x *UpdatePluginRequest) GetAll() bool {
+	if x != nil {
+		return x.All
+	}
+	return false
+}
+
+type PluginUpdateResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PluginId      string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	FromVersion   string                 `protobuf:"bytes,4,opt,name=from_version,json=fromVersion,proto3" json:"from_version,omitempty"`
+	ToVersion     string                 `protobuf:"bytes,5,opt,name=to_version,json=toVersion,proto3" json:"to_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PluginUpdateResult) Reset() {
+	*x = PluginUpdateResult{}
+	mi := &file_conduit_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PluginUpdateResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PluginUpdateResult) ProtoMessage() {}
+
+func (x *PluginUpdateResult) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PluginUpdateResult.ProtoReflect.Descriptor instead.
+func (*PluginUpdateResult) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *PluginUpdateResult) GetPluginId() string {
+	if x != nil {
+		return x.PluginId
+	}
+	return ""
+}
+
+func (x *PluginUpdateResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *PluginUpdateResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *PluginUpdateResult) GetFromVersion() string {
+	if x != nil {
+		return x.FromVersion
+	}
+	return ""
+}
+
+func (x *PluginUpdateResult) GetToVersion() string {
+	if x != nil {
+		return x.ToVersion
+	}
+	return ""
+}
+
+type UpdatePluginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Results       []*PluginUpdateResult  `protobuf:"bytes,3,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePluginResponse) Reset() {
+	*x = UpdatePluginResponse{}
+	mi := &file_conduit_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePluginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePluginResponse) ProtoMessage() {}
+
+func (x *UpdatePluginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePluginResponse.ProtoReflect.Descriptor instead.
+func (*UpdatePluginResponse) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *UpdatePluginResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *UpdatePluginResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *UpdatePluginResponse) GetResults() []*PluginUpdateResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type CheckUpdatesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ForceRefresh  bool                   `protobuf:"varint,1,opt,name=force_refresh,json=forceRefresh,proto3" json:"force_refresh,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckUpdatesRequest) Reset() {
+	*x = CheckUpdatesRequest{}
+	mi := &file_conduit_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckUpdatesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckUpdatesRequest) ProtoMessage() {}
+
+func (x *CheckUpdatesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckUpdatesRequest.ProtoReflect.Descriptor instead.
+func (*CheckUpdatesRequest) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *CheckUpdatesRequest) GetForceRefresh() bool {
+	if x != nil {
+		return x.ForceRefresh
+	}
+	return false
+}
+
+type CheckUpdatesResponse struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RegistryReachable     bool                   `protobuf:"varint,1,opt,name=registry_reachable,json=registryReachable,proto3" json:"registry_reachable,omitempty"`
+	CoreLatestVersion     string                 `protobuf:"bytes,2,opt,name=core_latest_version,json=coreLatestVersion,proto3" json:"core_latest_version,omitempty"`
+	CoreReleaseUrl        string                 `protobuf:"bytes,3,opt,name=core_release_url,json=coreReleaseUrl,proto3" json:"core_release_url,omitempty"`
+	CoreUpdateAvailable   bool                   `protobuf:"varint,4,opt,name=core_update_available,json=coreUpdateAvailable,proto3" json:"core_update_available,omitempty"`
+	GuiLatestVersion      string                 `protobuf:"bytes,5,opt,name=gui_latest_version,json=guiLatestVersion,proto3" json:"gui_latest_version,omitempty"`
+	GuiReleaseUrl         string                 `protobuf:"bytes,6,opt,name=gui_release_url,json=guiReleaseUrl,proto3" json:"gui_release_url,omitempty"`
+	GuiUpdateAvailable    bool                   `protobuf:"varint,7,opt,name=gui_update_available,json=guiUpdateAvailable,proto3" json:"gui_update_available,omitempty"`
+	Plugins               []*ProtoPluginInfo     `protobuf:"bytes,8,rep,name=plugins,proto3" json:"plugins,omitempty"`
+	UpdatesAvailableCount int32                  `protobuf:"varint,9,opt,name=updates_available_count,json=updatesAvailableCount,proto3" json:"updates_available_count,omitempty"`
+	NewPluginsCount       int32                  `protobuf:"varint,10,opt,name=new_plugins_count,json=newPluginsCount,proto3" json:"new_plugins_count,omitempty"`
+	CheckedAt             string                 `protobuf:"bytes,11,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *CheckUpdatesResponse) Reset() {
+	*x = CheckUpdatesResponse{}
+	mi := &file_conduit_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckUpdatesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckUpdatesResponse) ProtoMessage() {}
+
+func (x *CheckUpdatesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckUpdatesResponse.ProtoReflect.Descriptor instead.
+func (*CheckUpdatesResponse) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *CheckUpdatesResponse) GetRegistryReachable() bool {
+	if x != nil {
+		return x.RegistryReachable
+	}
+	return false
+}
+
+func (x *CheckUpdatesResponse) GetCoreLatestVersion() string {
+	if x != nil {
+		return x.CoreLatestVersion
+	}
+	return ""
+}
+
+func (x *CheckUpdatesResponse) GetCoreReleaseUrl() string {
+	if x != nil {
+		return x.CoreReleaseUrl
+	}
+	return ""
+}
+
+func (x *CheckUpdatesResponse) GetCoreUpdateAvailable() bool {
+	if x != nil {
+		return x.CoreUpdateAvailable
+	}
+	return false
+}
+
+func (x *CheckUpdatesResponse) GetGuiLatestVersion() string {
+	if x != nil {
+		return x.GuiLatestVersion
+	}
+	return ""
+}
+
+func (x *CheckUpdatesResponse) GetGuiReleaseUrl() string {
+	if x != nil {
+		return x.GuiReleaseUrl
+	}
+	return ""
+}
+
+func (x *CheckUpdatesResponse) GetGuiUpdateAvailable() bool {
+	if x != nil {
+		return x.GuiUpdateAvailable
+	}
+	return false
+}
+
+func (x *CheckUpdatesResponse) GetPlugins() []*ProtoPluginInfo {
+	if x != nil {
+		return x.Plugins
+	}
+	return nil
+}
+
+func (x *CheckUpdatesResponse) GetUpdatesAvailableCount() int32 {
+	if x != nil {
+		return x.UpdatesAvailableCount
+	}
+	return 0
+}
+
+func (x *CheckUpdatesResponse) GetNewPluginsCount() int32 {
+	if x != nil {
+		return x.NewPluginsCount
+	}
+	return 0
+}
+
+func (x *CheckUpdatesResponse) GetCheckedAt() string {
+	if x != nil {
+		return x.CheckedAt
+	}
+	return ""
+}
+
+type MarkPluginsSeenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PluginIds     []string               `protobuf:"bytes,1,rep,name=plugin_ids,json=pluginIds,proto3" json:"plugin_ids,omitempty"` // optional: empty marks all current catalog plugins as seen
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkPluginsSeenRequest) Reset() {
+	*x = MarkPluginsSeenRequest{}
+	mi := &file_conduit_proto_msgTypes[77]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkPluginsSeenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkPluginsSeenRequest) ProtoMessage() {}
+
+func (x *MarkPluginsSeenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[77]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkPluginsSeenRequest.ProtoReflect.Descriptor instead.
+func (*MarkPluginsSeenRequest) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{77}
+}
+
+func (x *MarkPluginsSeenRequest) GetPluginIds() []string {
+	if x != nil {
+		return x.PluginIds
+	}
+	return nil
+}
+
+type MarkPluginsSeenResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkPluginsSeenResponse) Reset() {
+	*x = MarkPluginsSeenResponse{}
+	mi := &file_conduit_proto_msgTypes[78]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkPluginsSeenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkPluginsSeenResponse) ProtoMessage() {}
+
+func (x *MarkPluginsSeenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_conduit_proto_msgTypes[78]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkPluginsSeenResponse.ProtoReflect.Descriptor instead.
+func (*MarkPluginsSeenResponse) Descriptor() ([]byte, []int) {
+	return file_conduit_proto_rawDescGZIP(), []int{78}
+}
+
+func (x *MarkPluginsSeenResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 // Configuración Global de la Aplicación (Copiada e integrada de Telegram, Discord y ZapZap)
 type AppSettings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -4857,7 +5493,7 @@ type AppSettings struct {
 
 func (x *AppSettings) Reset() {
 	*x = AppSettings{}
-	mi := &file_conduit_proto_msgTypes[70]
+	mi := &file_conduit_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4869,7 +5505,7 @@ func (x *AppSettings) String() string {
 func (*AppSettings) ProtoMessage() {}
 
 func (x *AppSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[70]
+	mi := &file_conduit_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4882,7 +5518,7 @@ func (x *AppSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppSettings.ProtoReflect.Descriptor instead.
 func (*AppSettings) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{70}
+	return file_conduit_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *AppSettings) GetLanguage() string {
@@ -5026,7 +5662,7 @@ type GetSettingsRequest struct {
 
 func (x *GetSettingsRequest) Reset() {
 	*x = GetSettingsRequest{}
-	mi := &file_conduit_proto_msgTypes[71]
+	mi := &file_conduit_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5038,7 +5674,7 @@ func (x *GetSettingsRequest) String() string {
 func (*GetSettingsRequest) ProtoMessage() {}
 
 func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[71]
+	mi := &file_conduit_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5051,7 +5687,7 @@ func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{71}
+	return file_conduit_proto_rawDescGZIP(), []int{80}
 }
 
 type GetSettingsResponse struct {
@@ -5063,7 +5699,7 @@ type GetSettingsResponse struct {
 
 func (x *GetSettingsResponse) Reset() {
 	*x = GetSettingsResponse{}
-	mi := &file_conduit_proto_msgTypes[72]
+	mi := &file_conduit_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5075,7 +5711,7 @@ func (x *GetSettingsResponse) String() string {
 func (*GetSettingsResponse) ProtoMessage() {}
 
 func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[72]
+	mi := &file_conduit_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5088,7 +5724,7 @@ func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{72}
+	return file_conduit_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *GetSettingsResponse) GetSettings() *AppSettings {
@@ -5107,7 +5743,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_conduit_proto_msgTypes[73]
+	mi := &file_conduit_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5119,7 +5755,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[73]
+	mi := &file_conduit_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5132,7 +5768,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{73}
+	return file_conduit_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *UpdateSettingsRequest) GetSettings() *AppSettings {
@@ -5151,7 +5787,7 @@ type UpdateSettingsResponse struct {
 
 func (x *UpdateSettingsResponse) Reset() {
 	*x = UpdateSettingsResponse{}
-	mi := &file_conduit_proto_msgTypes[74]
+	mi := &file_conduit_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5163,7 +5799,7 @@ func (x *UpdateSettingsResponse) String() string {
 func (*UpdateSettingsResponse) ProtoMessage() {}
 
 func (x *UpdateSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[74]
+	mi := &file_conduit_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5176,7 +5812,7 @@ func (x *UpdateSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsResponse.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{74}
+	return file_conduit_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *UpdateSettingsResponse) GetSettings() *AppSettings {
@@ -5197,7 +5833,7 @@ type SendReactionRequest struct {
 
 func (x *SendReactionRequest) Reset() {
 	*x = SendReactionRequest{}
-	mi := &file_conduit_proto_msgTypes[75]
+	mi := &file_conduit_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5209,7 +5845,7 @@ func (x *SendReactionRequest) String() string {
 func (*SendReactionRequest) ProtoMessage() {}
 
 func (x *SendReactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[75]
+	mi := &file_conduit_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5222,7 +5858,7 @@ func (x *SendReactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendReactionRequest.ProtoReflect.Descriptor instead.
 func (*SendReactionRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{75}
+	return file_conduit_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *SendReactionRequest) GetMessageId() string {
@@ -5249,7 +5885,7 @@ type SendReactionResponse struct {
 
 func (x *SendReactionResponse) Reset() {
 	*x = SendReactionResponse{}
-	mi := &file_conduit_proto_msgTypes[76]
+	mi := &file_conduit_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5261,7 +5897,7 @@ func (x *SendReactionResponse) String() string {
 func (*SendReactionResponse) ProtoMessage() {}
 
 func (x *SendReactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[76]
+	mi := &file_conduit_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5274,7 +5910,7 @@ func (x *SendReactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendReactionResponse.ProtoReflect.Descriptor instead.
 func (*SendReactionResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{76}
+	return file_conduit_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *SendReactionResponse) GetSuccess() bool {
@@ -5302,7 +5938,7 @@ type PluginReactionRequest struct {
 
 func (x *PluginReactionRequest) Reset() {
 	*x = PluginReactionRequest{}
-	mi := &file_conduit_proto_msgTypes[77]
+	mi := &file_conduit_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5314,7 +5950,7 @@ func (x *PluginReactionRequest) String() string {
 func (*PluginReactionRequest) ProtoMessage() {}
 
 func (x *PluginReactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[77]
+	mi := &file_conduit_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5327,7 +5963,7 @@ func (x *PluginReactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginReactionRequest.ProtoReflect.Descriptor instead.
 func (*PluginReactionRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{77}
+	return file_conduit_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *PluginReactionRequest) GetRemoteChatId() string {
@@ -5361,7 +5997,7 @@ type PluginReactionResponse struct {
 
 func (x *PluginReactionResponse) Reset() {
 	*x = PluginReactionResponse{}
-	mi := &file_conduit_proto_msgTypes[78]
+	mi := &file_conduit_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5373,7 +6009,7 @@ func (x *PluginReactionResponse) String() string {
 func (*PluginReactionResponse) ProtoMessage() {}
 
 func (x *PluginReactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[78]
+	mi := &file_conduit_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5386,7 +6022,7 @@ func (x *PluginReactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginReactionResponse.ProtoReflect.Descriptor instead.
 func (*PluginReactionResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{78}
+	return file_conduit_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *PluginReactionResponse) GetSuccess() bool {
@@ -5414,7 +6050,7 @@ type SendVoteRequest struct {
 
 func (x *SendVoteRequest) Reset() {
 	*x = SendVoteRequest{}
-	mi := &file_conduit_proto_msgTypes[79]
+	mi := &file_conduit_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5426,7 +6062,7 @@ func (x *SendVoteRequest) String() string {
 func (*SendVoteRequest) ProtoMessage() {}
 
 func (x *SendVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[79]
+	mi := &file_conduit_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5439,7 +6075,7 @@ func (x *SendVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendVoteRequest.ProtoReflect.Descriptor instead.
 func (*SendVoteRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{79}
+	return file_conduit_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *SendVoteRequest) GetMessageId() string {
@@ -5466,7 +6102,7 @@ type SendVoteResponse struct {
 
 func (x *SendVoteResponse) Reset() {
 	*x = SendVoteResponse{}
-	mi := &file_conduit_proto_msgTypes[80]
+	mi := &file_conduit_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5478,7 +6114,7 @@ func (x *SendVoteResponse) String() string {
 func (*SendVoteResponse) ProtoMessage() {}
 
 func (x *SendVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[80]
+	mi := &file_conduit_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5491,7 +6127,7 @@ func (x *SendVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendVoteResponse.ProtoReflect.Descriptor instead.
 func (*SendVoteResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{80}
+	return file_conduit_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *SendVoteResponse) GetSuccess() bool {
@@ -5519,7 +6155,7 @@ type PluginVoteRequest struct {
 
 func (x *PluginVoteRequest) Reset() {
 	*x = PluginVoteRequest{}
-	mi := &file_conduit_proto_msgTypes[81]
+	mi := &file_conduit_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5531,7 +6167,7 @@ func (x *PluginVoteRequest) String() string {
 func (*PluginVoteRequest) ProtoMessage() {}
 
 func (x *PluginVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[81]
+	mi := &file_conduit_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5544,7 +6180,7 @@ func (x *PluginVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginVoteRequest.ProtoReflect.Descriptor instead.
 func (*PluginVoteRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{81}
+	return file_conduit_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *PluginVoteRequest) GetRemoteChatId() string {
@@ -5578,7 +6214,7 @@ type PluginVoteResponse struct {
 
 func (x *PluginVoteResponse) Reset() {
 	*x = PluginVoteResponse{}
-	mi := &file_conduit_proto_msgTypes[82]
+	mi := &file_conduit_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5590,7 +6226,7 @@ func (x *PluginVoteResponse) String() string {
 func (*PluginVoteResponse) ProtoMessage() {}
 
 func (x *PluginVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[82]
+	mi := &file_conduit_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5603,7 +6239,7 @@ func (x *PluginVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginVoteResponse.ProtoReflect.Descriptor instead.
 func (*PluginVoteResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{82}
+	return file_conduit_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *PluginVoteResponse) GetSuccess() bool {
@@ -5632,7 +6268,7 @@ type ClickButtonRequest struct {
 
 func (x *ClickButtonRequest) Reset() {
 	*x = ClickButtonRequest{}
-	mi := &file_conduit_proto_msgTypes[83]
+	mi := &file_conduit_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5644,7 +6280,7 @@ func (x *ClickButtonRequest) String() string {
 func (*ClickButtonRequest) ProtoMessage() {}
 
 func (x *ClickButtonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[83]
+	mi := &file_conduit_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5657,7 +6293,7 @@ func (x *ClickButtonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClickButtonRequest.ProtoReflect.Descriptor instead.
 func (*ClickButtonRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{83}
+	return file_conduit_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ClickButtonRequest) GetMessageId() string {
@@ -5693,7 +6329,7 @@ type ClickButtonResponse struct {
 
 func (x *ClickButtonResponse) Reset() {
 	*x = ClickButtonResponse{}
-	mi := &file_conduit_proto_msgTypes[84]
+	mi := &file_conduit_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5705,7 +6341,7 @@ func (x *ClickButtonResponse) String() string {
 func (*ClickButtonResponse) ProtoMessage() {}
 
 func (x *ClickButtonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[84]
+	mi := &file_conduit_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5718,7 +6354,7 @@ func (x *ClickButtonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClickButtonResponse.ProtoReflect.Descriptor instead.
 func (*ClickButtonResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{84}
+	return file_conduit_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ClickButtonResponse) GetSuccess() bool {
@@ -5761,7 +6397,7 @@ type PluginClickButtonRequest struct {
 
 func (x *PluginClickButtonRequest) Reset() {
 	*x = PluginClickButtonRequest{}
-	mi := &file_conduit_proto_msgTypes[85]
+	mi := &file_conduit_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5773,7 +6409,7 @@ func (x *PluginClickButtonRequest) String() string {
 func (*PluginClickButtonRequest) ProtoMessage() {}
 
 func (x *PluginClickButtonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[85]
+	mi := &file_conduit_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5786,7 +6422,7 @@ func (x *PluginClickButtonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginClickButtonRequest.ProtoReflect.Descriptor instead.
 func (*PluginClickButtonRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{85}
+	return file_conduit_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *PluginClickButtonRequest) GetRemoteChatId() string {
@@ -5830,7 +6466,7 @@ type PluginClickButtonResponse struct {
 
 func (x *PluginClickButtonResponse) Reset() {
 	*x = PluginClickButtonResponse{}
-	mi := &file_conduit_proto_msgTypes[86]
+	mi := &file_conduit_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5842,7 +6478,7 @@ func (x *PluginClickButtonResponse) String() string {
 func (*PluginClickButtonResponse) ProtoMessage() {}
 
 func (x *PluginClickButtonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[86]
+	mi := &file_conduit_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5855,7 +6491,7 @@ func (x *PluginClickButtonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginClickButtonResponse.ProtoReflect.Descriptor instead.
 func (*PluginClickButtonResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{86}
+	return file_conduit_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *PluginClickButtonResponse) GetSuccess() bool {
@@ -5904,7 +6540,7 @@ type EditMessageRequest struct {
 
 func (x *EditMessageRequest) Reset() {
 	*x = EditMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[87]
+	mi := &file_conduit_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5916,7 +6552,7 @@ func (x *EditMessageRequest) String() string {
 func (*EditMessageRequest) ProtoMessage() {}
 
 func (x *EditMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[87]
+	mi := &file_conduit_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5929,7 +6565,7 @@ func (x *EditMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditMessageRequest.ProtoReflect.Descriptor instead.
 func (*EditMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{87}
+	return file_conduit_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *EditMessageRequest) GetMessageId() string {
@@ -5956,7 +6592,7 @@ type EditMessageResponse struct {
 
 func (x *EditMessageResponse) Reset() {
 	*x = EditMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[88]
+	mi := &file_conduit_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5968,7 +6604,7 @@ func (x *EditMessageResponse) String() string {
 func (*EditMessageResponse) ProtoMessage() {}
 
 func (x *EditMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[88]
+	mi := &file_conduit_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5981,7 +6617,7 @@ func (x *EditMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditMessageResponse.ProtoReflect.Descriptor instead.
 func (*EditMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{88}
+	return file_conduit_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *EditMessageResponse) GetSuccess() bool {
@@ -6007,7 +6643,7 @@ type DeleteMessageRequest struct {
 
 func (x *DeleteMessageRequest) Reset() {
 	*x = DeleteMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[89]
+	mi := &file_conduit_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6019,7 +6655,7 @@ func (x *DeleteMessageRequest) String() string {
 func (*DeleteMessageRequest) ProtoMessage() {}
 
 func (x *DeleteMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[89]
+	mi := &file_conduit_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6032,7 +6668,7 @@ func (x *DeleteMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMessageRequest.ProtoReflect.Descriptor instead.
 func (*DeleteMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{89}
+	return file_conduit_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *DeleteMessageRequest) GetMessageId() string {
@@ -6051,7 +6687,7 @@ type DeleteMessageResponse struct {
 
 func (x *DeleteMessageResponse) Reset() {
 	*x = DeleteMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[90]
+	mi := &file_conduit_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6063,7 +6699,7 @@ func (x *DeleteMessageResponse) String() string {
 func (*DeleteMessageResponse) ProtoMessage() {}
 
 func (x *DeleteMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[90]
+	mi := &file_conduit_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6076,7 +6712,7 @@ func (x *DeleteMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMessageResponse.ProtoReflect.Descriptor instead.
 func (*DeleteMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{90}
+	return file_conduit_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *DeleteMessageResponse) GetSuccess() bool {
@@ -6096,7 +6732,7 @@ type PinMessageRequest struct {
 
 func (x *PinMessageRequest) Reset() {
 	*x = PinMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[91]
+	mi := &file_conduit_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6108,7 +6744,7 @@ func (x *PinMessageRequest) String() string {
 func (*PinMessageRequest) ProtoMessage() {}
 
 func (x *PinMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[91]
+	mi := &file_conduit_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6121,7 +6757,7 @@ func (x *PinMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinMessageRequest.ProtoReflect.Descriptor instead.
 func (*PinMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{91}
+	return file_conduit_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *PinMessageRequest) GetMessageId() string {
@@ -6148,7 +6784,7 @@ type PinMessageResponse struct {
 
 func (x *PinMessageResponse) Reset() {
 	*x = PinMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[92]
+	mi := &file_conduit_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6160,7 +6796,7 @@ func (x *PinMessageResponse) String() string {
 func (*PinMessageResponse) ProtoMessage() {}
 
 func (x *PinMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[92]
+	mi := &file_conduit_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6173,7 +6809,7 @@ func (x *PinMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinMessageResponse.ProtoReflect.Descriptor instead.
 func (*PinMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{92}
+	return file_conduit_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *PinMessageResponse) GetSuccess() bool {
@@ -6201,7 +6837,7 @@ type PluginEditMessageRequest struct {
 
 func (x *PluginEditMessageRequest) Reset() {
 	*x = PluginEditMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[93]
+	mi := &file_conduit_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6213,7 +6849,7 @@ func (x *PluginEditMessageRequest) String() string {
 func (*PluginEditMessageRequest) ProtoMessage() {}
 
 func (x *PluginEditMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[93]
+	mi := &file_conduit_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6226,7 +6862,7 @@ func (x *PluginEditMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginEditMessageRequest.ProtoReflect.Descriptor instead.
 func (*PluginEditMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{93}
+	return file_conduit_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *PluginEditMessageRequest) GetRemoteChatId() string {
@@ -6260,7 +6896,7 @@ type PluginEditMessageResponse struct {
 
 func (x *PluginEditMessageResponse) Reset() {
 	*x = PluginEditMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[94]
+	mi := &file_conduit_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6272,7 +6908,7 @@ func (x *PluginEditMessageResponse) String() string {
 func (*PluginEditMessageResponse) ProtoMessage() {}
 
 func (x *PluginEditMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[94]
+	mi := &file_conduit_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6285,7 +6921,7 @@ func (x *PluginEditMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginEditMessageResponse.ProtoReflect.Descriptor instead.
 func (*PluginEditMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{94}
+	return file_conduit_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *PluginEditMessageResponse) GetSuccess() bool {
@@ -6312,7 +6948,7 @@ type PluginDeleteMessageRequest struct {
 
 func (x *PluginDeleteMessageRequest) Reset() {
 	*x = PluginDeleteMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[95]
+	mi := &file_conduit_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6324,7 +6960,7 @@ func (x *PluginDeleteMessageRequest) String() string {
 func (*PluginDeleteMessageRequest) ProtoMessage() {}
 
 func (x *PluginDeleteMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[95]
+	mi := &file_conduit_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6337,7 +6973,7 @@ func (x *PluginDeleteMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDeleteMessageRequest.ProtoReflect.Descriptor instead.
 func (*PluginDeleteMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{95}
+	return file_conduit_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *PluginDeleteMessageRequest) GetRemoteChatId() string {
@@ -6364,7 +7000,7 @@ type PluginDeleteMessageResponse struct {
 
 func (x *PluginDeleteMessageResponse) Reset() {
 	*x = PluginDeleteMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[96]
+	mi := &file_conduit_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6376,7 +7012,7 @@ func (x *PluginDeleteMessageResponse) String() string {
 func (*PluginDeleteMessageResponse) ProtoMessage() {}
 
 func (x *PluginDeleteMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[96]
+	mi := &file_conduit_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6389,7 +7025,7 @@ func (x *PluginDeleteMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDeleteMessageResponse.ProtoReflect.Descriptor instead.
 func (*PluginDeleteMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{96}
+	return file_conduit_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *PluginDeleteMessageResponse) GetSuccess() bool {
@@ -6419,7 +7055,7 @@ type PluginPinMessageRequest struct {
 
 func (x *PluginPinMessageRequest) Reset() {
 	*x = PluginPinMessageRequest{}
-	mi := &file_conduit_proto_msgTypes[97]
+	mi := &file_conduit_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6431,7 +7067,7 @@ func (x *PluginPinMessageRequest) String() string {
 func (*PluginPinMessageRequest) ProtoMessage() {}
 
 func (x *PluginPinMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[97]
+	mi := &file_conduit_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6444,7 +7080,7 @@ func (x *PluginPinMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginPinMessageRequest.ProtoReflect.Descriptor instead.
 func (*PluginPinMessageRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{97}
+	return file_conduit_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *PluginPinMessageRequest) GetRemoteChatId() string {
@@ -6492,7 +7128,7 @@ type PluginPinMessageResponse struct {
 
 func (x *PluginPinMessageResponse) Reset() {
 	*x = PluginPinMessageResponse{}
-	mi := &file_conduit_proto_msgTypes[98]
+	mi := &file_conduit_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6504,7 +7140,7 @@ func (x *PluginPinMessageResponse) String() string {
 func (*PluginPinMessageResponse) ProtoMessage() {}
 
 func (x *PluginPinMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[98]
+	mi := &file_conduit_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6517,7 +7153,7 @@ func (x *PluginPinMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginPinMessageResponse.ProtoReflect.Descriptor instead.
 func (*PluginPinMessageResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{98}
+	return file_conduit_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *PluginPinMessageResponse) GetSuccess() bool {
@@ -6544,7 +7180,7 @@ type MarkConversationReadRequest struct {
 
 func (x *MarkConversationReadRequest) Reset() {
 	*x = MarkConversationReadRequest{}
-	mi := &file_conduit_proto_msgTypes[99]
+	mi := &file_conduit_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6556,7 +7192,7 @@ func (x *MarkConversationReadRequest) String() string {
 func (*MarkConversationReadRequest) ProtoMessage() {}
 
 func (x *MarkConversationReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[99]
+	mi := &file_conduit_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6569,7 +7205,7 @@ func (x *MarkConversationReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkConversationReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkConversationReadRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{99}
+	return file_conduit_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *MarkConversationReadRequest) GetConversationId() string {
@@ -6589,7 +7225,7 @@ type MarkConversationReadResponse struct {
 
 func (x *MarkConversationReadResponse) Reset() {
 	*x = MarkConversationReadResponse{}
-	mi := &file_conduit_proto_msgTypes[100]
+	mi := &file_conduit_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6601,7 +7237,7 @@ func (x *MarkConversationReadResponse) String() string {
 func (*MarkConversationReadResponse) ProtoMessage() {}
 
 func (x *MarkConversationReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[100]
+	mi := &file_conduit_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6614,7 +7250,7 @@ func (x *MarkConversationReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkConversationReadResponse.ProtoReflect.Descriptor instead.
 func (*MarkConversationReadResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{100}
+	return file_conduit_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *MarkConversationReadResponse) GetSuccess() bool {
@@ -6644,7 +7280,7 @@ type PluginMarkReadRequest struct {
 
 func (x *PluginMarkReadRequest) Reset() {
 	*x = PluginMarkReadRequest{}
-	mi := &file_conduit_proto_msgTypes[101]
+	mi := &file_conduit_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6656,7 +7292,7 @@ func (x *PluginMarkReadRequest) String() string {
 func (*PluginMarkReadRequest) ProtoMessage() {}
 
 func (x *PluginMarkReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[101]
+	mi := &file_conduit_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6669,7 +7305,7 @@ func (x *PluginMarkReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginMarkReadRequest.ProtoReflect.Descriptor instead.
 func (*PluginMarkReadRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{101}
+	return file_conduit_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *PluginMarkReadRequest) GetRemoteChatId() string {
@@ -6717,7 +7353,7 @@ type PluginMarkReadResponse struct {
 
 func (x *PluginMarkReadResponse) Reset() {
 	*x = PluginMarkReadResponse{}
-	mi := &file_conduit_proto_msgTypes[102]
+	mi := &file_conduit_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6729,7 +7365,7 @@ func (x *PluginMarkReadResponse) String() string {
 func (*PluginMarkReadResponse) ProtoMessage() {}
 
 func (x *PluginMarkReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[102]
+	mi := &file_conduit_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6742,7 +7378,7 @@ func (x *PluginMarkReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginMarkReadResponse.ProtoReflect.Descriptor instead.
 func (*PluginMarkReadResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{102}
+	return file_conduit_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *PluginMarkReadResponse) GetSuccess() bool {
@@ -6770,7 +7406,7 @@ type DownloadAttachmentRequest struct {
 
 func (x *DownloadAttachmentRequest) Reset() {
 	*x = DownloadAttachmentRequest{}
-	mi := &file_conduit_proto_msgTypes[103]
+	mi := &file_conduit_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6782,7 +7418,7 @@ func (x *DownloadAttachmentRequest) String() string {
 func (*DownloadAttachmentRequest) ProtoMessage() {}
 
 func (x *DownloadAttachmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[103]
+	mi := &file_conduit_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6795,7 +7431,7 @@ func (x *DownloadAttachmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadAttachmentRequest.ProtoReflect.Descriptor instead.
 func (*DownloadAttachmentRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{103}
+	return file_conduit_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *DownloadAttachmentRequest) GetAttachmentId() string {
@@ -6821,7 +7457,7 @@ type DownloadAttachmentResponse struct {
 
 func (x *DownloadAttachmentResponse) Reset() {
 	*x = DownloadAttachmentResponse{}
-	mi := &file_conduit_proto_msgTypes[104]
+	mi := &file_conduit_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6833,7 +7469,7 @@ func (x *DownloadAttachmentResponse) String() string {
 func (*DownloadAttachmentResponse) ProtoMessage() {}
 
 func (x *DownloadAttachmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[104]
+	mi := &file_conduit_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6846,7 +7482,7 @@ func (x *DownloadAttachmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadAttachmentResponse.ProtoReflect.Descriptor instead.
 func (*DownloadAttachmentResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{104}
+	return file_conduit_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *DownloadAttachmentResponse) GetAttachment() *ProtoAttachment {
@@ -6868,7 +7504,7 @@ type PluginDownloadMediaRequest struct {
 
 func (x *PluginDownloadMediaRequest) Reset() {
 	*x = PluginDownloadMediaRequest{}
-	mi := &file_conduit_proto_msgTypes[105]
+	mi := &file_conduit_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6880,7 +7516,7 @@ func (x *PluginDownloadMediaRequest) String() string {
 func (*PluginDownloadMediaRequest) ProtoMessage() {}
 
 func (x *PluginDownloadMediaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[105]
+	mi := &file_conduit_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6893,7 +7529,7 @@ func (x *PluginDownloadMediaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDownloadMediaRequest.ProtoReflect.Descriptor instead.
 func (*PluginDownloadMediaRequest) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{105}
+	return file_conduit_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *PluginDownloadMediaRequest) GetRemoteRef() string {
@@ -6936,7 +7572,7 @@ type PluginDownloadMediaResponse struct {
 
 func (x *PluginDownloadMediaResponse) Reset() {
 	*x = PluginDownloadMediaResponse{}
-	mi := &file_conduit_proto_msgTypes[106]
+	mi := &file_conduit_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6948,7 +7584,7 @@ func (x *PluginDownloadMediaResponse) String() string {
 func (*PluginDownloadMediaResponse) ProtoMessage() {}
 
 func (x *PluginDownloadMediaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conduit_proto_msgTypes[106]
+	mi := &file_conduit_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6961,7 +7597,7 @@ func (x *PluginDownloadMediaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginDownloadMediaResponse.ProtoReflect.Descriptor instead.
 func (*PluginDownloadMediaResponse) Descriptor() ([]byte, []int) {
-	return file_conduit_proto_rawDescGZIP(), []int{106}
+	return file_conduit_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *PluginDownloadMediaResponse) GetSuccess() bool {
@@ -7219,11 +7855,14 @@ const file_conduit_proto_rawDesc = "" +
 	"\x05query\x18\x01 \x01(\tR\x05query\"V\n" +
 	"\x1eFindContactsByIdentityResponse\x124\n" +
 	"\bcontacts\x18\x01 \x03(\v2\x18.conduit.v1.ProtoContactR\bcontacts\"\x12\n" +
-	"\x10GetStatusRequest\"\x80\x02\n" +
+	"\x10GetStatusRequest\"\xcc\x02\n" +
 	"\x11GetStatusResponse\x12!\n" +
 	"\fcore_version\x18\x01 \x01(\tR\vcoreVersion\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x03R\ruptimeSeconds\x12]\n" +
-	"\x10channel_statuses\x18\x03 \x03(\v22.conduit.v1.GetStatusResponse.ChannelStatusesEntryR\x0fchannelStatuses\x1aB\n" +
+	"\x10channel_statuses\x18\x03 \x03(\v22.conduit.v1.GetStatusResponse.ChannelStatusesEntryR\x0fchannelStatuses\x12)\n" +
+	"\x10protocol_version\x18\x04 \x01(\rR\x0fprotocolVersion\x12\x1f\n" +
+	"\vtui_version\x18\x05 \x01(\tR\n" +
+	"tuiVersion\x1aB\n" +
 	"\x14ChannelStatusesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb5\x02\n" +
@@ -7344,7 +7983,7 @@ const file_conduit_proto_rawDesc = "" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\"5\n" +
 	"\x19DisconnectAccountResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xb7\x02\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x91\x05\n" +
 	"\x0fProtoPluginInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -7359,12 +7998,25 @@ const file_conduit_proto_rawDesc = "" +
 	"repository\x18\t \x01(\tR\n" +
 	"repository\x12\x12\n" +
 	"\x04path\x18\n" +
-	" \x01(\tR\x04path\"\x14\n" +
+	" \x01(\tR\x04path\x12%\n" +
+	"\x0elatest_version\x18\v \x01(\tR\rlatestVersion\x12)\n" +
+	"\x10update_available\x18\f \x01(\bR\x0fupdateAvailable\x12\x15\n" +
+	"\x06is_new\x18\r \x01(\bR\x05isNew\x12\x1e\n" +
+	"\n" +
+	"compatible\x18\x0e \x01(\bR\n" +
+	"compatible\x125\n" +
+	"\x16incompatibility_reason\x18\x0f \x01(\tR\x15incompatibilityReason\x12-\n" +
+	"\x12managed_externally\x18\x10 \x01(\bR\x11managedExternally\x12$\n" +
+	"\x0eis_third_party\x18\x11 \x01(\bR\fisThirdParty\x12\x1f\n" +
+	"\vrelease_url\x18\x12 \x01(\tR\n" +
+	"releaseUrl\x12\"\n" +
+	"\fdependencies\x18\x13 \x03(\tR\fdependencies\"\x14\n" +
 	"\x12ListPluginsRequest\"L\n" +
 	"\x13ListPluginsResponse\x125\n" +
-	"\aplugins\x18\x01 \x03(\v2\x1b.conduit.v1.ProtoPluginInfoR\aplugins\"3\n" +
+	"\aplugins\x18\x01 \x03(\v2\x1b.conduit.v1.ProtoPluginInfoR\aplugins\"M\n" +
 	"\x14InstallPluginRequest\x12\x1b\n" +
-	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\"K\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"K\n" +
 	"\x15InstallPluginResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"J\n" +
@@ -7372,6 +8024,46 @@ const file_conduit_proto_rawDesc = "" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x16\n" +
 	"\x06enable\x18\x02 \x01(\bR\x06enable\"0\n" +
 	"\x14TogglePluginResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"5\n" +
+	"\x16UninstallPluginRequest\x12\x1b\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\"M\n" +
+	"\x17UninstallPluginResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"D\n" +
+	"\x13UpdatePluginRequest\x12\x1b\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x10\n" +
+	"\x03all\x18\x02 \x01(\bR\x03all\"\xa7\x01\n" +
+	"\x12PluginUpdateResult\x12\x1b\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12!\n" +
+	"\ffrom_version\x18\x04 \x01(\tR\vfromVersion\x12\x1d\n" +
+	"\n" +
+	"to_version\x18\x05 \x01(\tR\ttoVersion\"\x84\x01\n" +
+	"\x14UpdatePluginResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x128\n" +
+	"\aresults\x18\x03 \x03(\v2\x1e.conduit.v1.PluginUpdateResultR\aresults\":\n" +
+	"\x13CheckUpdatesRequest\x12#\n" +
+	"\rforce_refresh\x18\x01 \x01(\bR\fforceRefresh\"\x95\x04\n" +
+	"\x14CheckUpdatesResponse\x12-\n" +
+	"\x12registry_reachable\x18\x01 \x01(\bR\x11registryReachable\x12.\n" +
+	"\x13core_latest_version\x18\x02 \x01(\tR\x11coreLatestVersion\x12(\n" +
+	"\x10core_release_url\x18\x03 \x01(\tR\x0ecoreReleaseUrl\x122\n" +
+	"\x15core_update_available\x18\x04 \x01(\bR\x13coreUpdateAvailable\x12,\n" +
+	"\x12gui_latest_version\x18\x05 \x01(\tR\x10guiLatestVersion\x12&\n" +
+	"\x0fgui_release_url\x18\x06 \x01(\tR\rguiReleaseUrl\x120\n" +
+	"\x14gui_update_available\x18\a \x01(\bR\x12guiUpdateAvailable\x125\n" +
+	"\aplugins\x18\b \x03(\v2\x1b.conduit.v1.ProtoPluginInfoR\aplugins\x126\n" +
+	"\x17updates_available_count\x18\t \x01(\x05R\x15updatesAvailableCount\x12*\n" +
+	"\x11new_plugins_count\x18\n" +
+	" \x01(\x05R\x0fnewPluginsCount\x12\x1d\n" +
+	"\n" +
+	"checked_at\x18\v \x01(\tR\tcheckedAt\"7\n" +
+	"\x16MarkPluginsSeenRequest\x12\x1d\n" +
+	"\n" +
+	"plugin_ids\x18\x01 \x03(\tR\tpluginIds\"3\n" +
+	"\x17MarkPluginsSeenResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xbe\x06\n" +
 	"\vAppSettings\x12\x1a\n" +
 	"\blanguage\x18\x01 \x01(\tR\blanguage\x12\x1a\n" +
@@ -7544,7 +8236,7 @@ const file_conduit_proto_rawDesc = "" +
 	"\x11PROVIDER_TELEGRAM\x10\x02\x12\x14\n" +
 	"\x10PROVIDER_DISCORD\x10\x03\x12\x12\n" +
 	"\x0ePROVIDER_SLACK\x10\x04\x12\x12\n" +
-	"\x0ePROVIDER_GMAIL\x10\x052\xb7\x14\n" +
+	"\x0ePROVIDER_GMAIL\x10\x052\x95\x17\n" +
 	"\x0eConduitService\x12N\n" +
 	"\vSendMessage\x12\x1e.conduit.v1.SendMessageRequest\x1a\x1f.conduit.v1.SendMessageResponse\x12L\n" +
 	"\fStreamEvents\x12\x1f.conduit.v1.StreamEventsRequest\x1a\x19.conduit.v1.EventEnvelope0\x01\x12`\n" +
@@ -7565,7 +8257,11 @@ const file_conduit_proto_rawDesc = "" +
 	"\x11DisconnectAccount\x12$.conduit.v1.DisconnectAccountRequest\x1a%.conduit.v1.DisconnectAccountResponse\x12N\n" +
 	"\vListPlugins\x12\x1e.conduit.v1.ListPluginsRequest\x1a\x1f.conduit.v1.ListPluginsResponse\x12T\n" +
 	"\rInstallPlugin\x12 .conduit.v1.InstallPluginRequest\x1a!.conduit.v1.InstallPluginResponse\x12Q\n" +
-	"\fTogglePlugin\x12\x1f.conduit.v1.TogglePluginRequest\x1a .conduit.v1.TogglePluginResponse\x12N\n" +
+	"\fTogglePlugin\x12\x1f.conduit.v1.TogglePluginRequest\x1a .conduit.v1.TogglePluginResponse\x12Z\n" +
+	"\x0fUninstallPlugin\x12\".conduit.v1.UninstallPluginRequest\x1a#.conduit.v1.UninstallPluginResponse\x12Q\n" +
+	"\fUpdatePlugin\x12\x1f.conduit.v1.UpdatePluginRequest\x1a .conduit.v1.UpdatePluginResponse\x12Q\n" +
+	"\fCheckUpdates\x12\x1f.conduit.v1.CheckUpdatesRequest\x1a .conduit.v1.CheckUpdatesResponse\x12Z\n" +
+	"\x0fMarkPluginsSeen\x12\".conduit.v1.MarkPluginsSeenRequest\x1a#.conduit.v1.MarkPluginsSeenResponse\x12N\n" +
 	"\vGetSettings\x12\x1e.conduit.v1.GetSettingsRequest\x1a\x1f.conduit.v1.GetSettingsResponse\x12W\n" +
 	"\x0eUpdateSettings\x12!.conduit.v1.UpdateSettingsRequest\x1a\".conduit.v1.UpdateSettingsResponse\x12H\n" +
 	"\tGetStatus\x12\x1c.conduit.v1.GetStatusRequest\x1a\x1d.conduit.v1.GetStatusResponse\x12Q\n" +
@@ -7609,7 +8305,7 @@ func file_conduit_proto_rawDescGZIP() []byte {
 }
 
 var file_conduit_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_conduit_proto_msgTypes = make([]protoimpl.MessageInfo, 109)
+var file_conduit_proto_msgTypes = make([]protoimpl.MessageInfo, 118)
 var file_conduit_proto_goTypes = []any{
 	(CredentialFieldKind)(0),               // 0: conduit.v1.CredentialFieldKind
 	(LoginFlow)(0),                         // 1: conduit.v1.LoginFlow
@@ -7684,45 +8380,54 @@ var file_conduit_proto_goTypes = []any{
 	(*InstallPluginResponse)(nil),          // 70: conduit.v1.InstallPluginResponse
 	(*TogglePluginRequest)(nil),            // 71: conduit.v1.TogglePluginRequest
 	(*TogglePluginResponse)(nil),           // 72: conduit.v1.TogglePluginResponse
-	(*AppSettings)(nil),                    // 73: conduit.v1.AppSettings
-	(*GetSettingsRequest)(nil),             // 74: conduit.v1.GetSettingsRequest
-	(*GetSettingsResponse)(nil),            // 75: conduit.v1.GetSettingsResponse
-	(*UpdateSettingsRequest)(nil),          // 76: conduit.v1.UpdateSettingsRequest
-	(*UpdateSettingsResponse)(nil),         // 77: conduit.v1.UpdateSettingsResponse
-	(*SendReactionRequest)(nil),            // 78: conduit.v1.SendReactionRequest
-	(*SendReactionResponse)(nil),           // 79: conduit.v1.SendReactionResponse
-	(*PluginReactionRequest)(nil),          // 80: conduit.v1.PluginReactionRequest
-	(*PluginReactionResponse)(nil),         // 81: conduit.v1.PluginReactionResponse
-	(*SendVoteRequest)(nil),                // 82: conduit.v1.SendVoteRequest
-	(*SendVoteResponse)(nil),               // 83: conduit.v1.SendVoteResponse
-	(*PluginVoteRequest)(nil),              // 84: conduit.v1.PluginVoteRequest
-	(*PluginVoteResponse)(nil),             // 85: conduit.v1.PluginVoteResponse
-	(*ClickButtonRequest)(nil),             // 86: conduit.v1.ClickButtonRequest
-	(*ClickButtonResponse)(nil),            // 87: conduit.v1.ClickButtonResponse
-	(*PluginClickButtonRequest)(nil),       // 88: conduit.v1.PluginClickButtonRequest
-	(*PluginClickButtonResponse)(nil),      // 89: conduit.v1.PluginClickButtonResponse
-	(*EditMessageRequest)(nil),             // 90: conduit.v1.EditMessageRequest
-	(*EditMessageResponse)(nil),            // 91: conduit.v1.EditMessageResponse
-	(*DeleteMessageRequest)(nil),           // 92: conduit.v1.DeleteMessageRequest
-	(*DeleteMessageResponse)(nil),          // 93: conduit.v1.DeleteMessageResponse
-	(*PinMessageRequest)(nil),              // 94: conduit.v1.PinMessageRequest
-	(*PinMessageResponse)(nil),             // 95: conduit.v1.PinMessageResponse
-	(*PluginEditMessageRequest)(nil),       // 96: conduit.v1.PluginEditMessageRequest
-	(*PluginEditMessageResponse)(nil),      // 97: conduit.v1.PluginEditMessageResponse
-	(*PluginDeleteMessageRequest)(nil),     // 98: conduit.v1.PluginDeleteMessageRequest
-	(*PluginDeleteMessageResponse)(nil),    // 99: conduit.v1.PluginDeleteMessageResponse
-	(*PluginPinMessageRequest)(nil),        // 100: conduit.v1.PluginPinMessageRequest
-	(*PluginPinMessageResponse)(nil),       // 101: conduit.v1.PluginPinMessageResponse
-	(*MarkConversationReadRequest)(nil),    // 102: conduit.v1.MarkConversationReadRequest
-	(*MarkConversationReadResponse)(nil),   // 103: conduit.v1.MarkConversationReadResponse
-	(*PluginMarkReadRequest)(nil),          // 104: conduit.v1.PluginMarkReadRequest
-	(*PluginMarkReadResponse)(nil),         // 105: conduit.v1.PluginMarkReadResponse
-	(*DownloadAttachmentRequest)(nil),      // 106: conduit.v1.DownloadAttachmentRequest
-	(*DownloadAttachmentResponse)(nil),     // 107: conduit.v1.DownloadAttachmentResponse
-	(*PluginDownloadMediaRequest)(nil),     // 108: conduit.v1.PluginDownloadMediaRequest
-	(*PluginDownloadMediaResponse)(nil),    // 109: conduit.v1.PluginDownloadMediaResponse
-	nil,                                    // 110: conduit.v1.GetStatusResponse.ChannelStatusesEntry
-	nil,                                    // 111: conduit.v1.ProviderCredentials.ValuesEntry
+	(*UninstallPluginRequest)(nil),         // 73: conduit.v1.UninstallPluginRequest
+	(*UninstallPluginResponse)(nil),        // 74: conduit.v1.UninstallPluginResponse
+	(*UpdatePluginRequest)(nil),            // 75: conduit.v1.UpdatePluginRequest
+	(*PluginUpdateResult)(nil),             // 76: conduit.v1.PluginUpdateResult
+	(*UpdatePluginResponse)(nil),           // 77: conduit.v1.UpdatePluginResponse
+	(*CheckUpdatesRequest)(nil),            // 78: conduit.v1.CheckUpdatesRequest
+	(*CheckUpdatesResponse)(nil),           // 79: conduit.v1.CheckUpdatesResponse
+	(*MarkPluginsSeenRequest)(nil),         // 80: conduit.v1.MarkPluginsSeenRequest
+	(*MarkPluginsSeenResponse)(nil),        // 81: conduit.v1.MarkPluginsSeenResponse
+	(*AppSettings)(nil),                    // 82: conduit.v1.AppSettings
+	(*GetSettingsRequest)(nil),             // 83: conduit.v1.GetSettingsRequest
+	(*GetSettingsResponse)(nil),            // 84: conduit.v1.GetSettingsResponse
+	(*UpdateSettingsRequest)(nil),          // 85: conduit.v1.UpdateSettingsRequest
+	(*UpdateSettingsResponse)(nil),         // 86: conduit.v1.UpdateSettingsResponse
+	(*SendReactionRequest)(nil),            // 87: conduit.v1.SendReactionRequest
+	(*SendReactionResponse)(nil),           // 88: conduit.v1.SendReactionResponse
+	(*PluginReactionRequest)(nil),          // 89: conduit.v1.PluginReactionRequest
+	(*PluginReactionResponse)(nil),         // 90: conduit.v1.PluginReactionResponse
+	(*SendVoteRequest)(nil),                // 91: conduit.v1.SendVoteRequest
+	(*SendVoteResponse)(nil),               // 92: conduit.v1.SendVoteResponse
+	(*PluginVoteRequest)(nil),              // 93: conduit.v1.PluginVoteRequest
+	(*PluginVoteResponse)(nil),             // 94: conduit.v1.PluginVoteResponse
+	(*ClickButtonRequest)(nil),             // 95: conduit.v1.ClickButtonRequest
+	(*ClickButtonResponse)(nil),            // 96: conduit.v1.ClickButtonResponse
+	(*PluginClickButtonRequest)(nil),       // 97: conduit.v1.PluginClickButtonRequest
+	(*PluginClickButtonResponse)(nil),      // 98: conduit.v1.PluginClickButtonResponse
+	(*EditMessageRequest)(nil),             // 99: conduit.v1.EditMessageRequest
+	(*EditMessageResponse)(nil),            // 100: conduit.v1.EditMessageResponse
+	(*DeleteMessageRequest)(nil),           // 101: conduit.v1.DeleteMessageRequest
+	(*DeleteMessageResponse)(nil),          // 102: conduit.v1.DeleteMessageResponse
+	(*PinMessageRequest)(nil),              // 103: conduit.v1.PinMessageRequest
+	(*PinMessageResponse)(nil),             // 104: conduit.v1.PinMessageResponse
+	(*PluginEditMessageRequest)(nil),       // 105: conduit.v1.PluginEditMessageRequest
+	(*PluginEditMessageResponse)(nil),      // 106: conduit.v1.PluginEditMessageResponse
+	(*PluginDeleteMessageRequest)(nil),     // 107: conduit.v1.PluginDeleteMessageRequest
+	(*PluginDeleteMessageResponse)(nil),    // 108: conduit.v1.PluginDeleteMessageResponse
+	(*PluginPinMessageRequest)(nil),        // 109: conduit.v1.PluginPinMessageRequest
+	(*PluginPinMessageResponse)(nil),       // 110: conduit.v1.PluginPinMessageResponse
+	(*MarkConversationReadRequest)(nil),    // 111: conduit.v1.MarkConversationReadRequest
+	(*MarkConversationReadResponse)(nil),   // 112: conduit.v1.MarkConversationReadResponse
+	(*PluginMarkReadRequest)(nil),          // 113: conduit.v1.PluginMarkReadRequest
+	(*PluginMarkReadResponse)(nil),         // 114: conduit.v1.PluginMarkReadResponse
+	(*DownloadAttachmentRequest)(nil),      // 115: conduit.v1.DownloadAttachmentRequest
+	(*DownloadAttachmentResponse)(nil),     // 116: conduit.v1.DownloadAttachmentResponse
+	(*PluginDownloadMediaRequest)(nil),     // 117: conduit.v1.PluginDownloadMediaRequest
+	(*PluginDownloadMediaResponse)(nil),    // 118: conduit.v1.PluginDownloadMediaResponse
+	nil,                                    // 119: conduit.v1.GetStatusResponse.ChannelStatusesEntry
+	nil,                                    // 120: conduit.v1.ProviderCredentials.ValuesEntry
 }
 var file_conduit_proto_depIdxs = []int32{
 	0,   // 0: conduit.v1.CredentialField.kind:type_name -> conduit.v1.CredentialFieldKind
@@ -7754,8 +8459,8 @@ var file_conduit_proto_depIdxs = []int32{
 	6,   // 26: conduit.v1.SplitChannelResponse.new_contact:type_name -> conduit.v1.ProtoContact
 	6,   // 27: conduit.v1.SetContactIdentityResponse.contact:type_name -> conduit.v1.ProtoContact
 	6,   // 28: conduit.v1.FindContactsByIdentityResponse.contacts:type_name -> conduit.v1.ProtoContact
-	110, // 29: conduit.v1.GetStatusResponse.channel_statuses:type_name -> conduit.v1.GetStatusResponse.ChannelStatusesEntry
-	111, // 30: conduit.v1.ProviderCredentials.values:type_name -> conduit.v1.ProviderCredentials.ValuesEntry
+	119, // 29: conduit.v1.GetStatusResponse.channel_statuses:type_name -> conduit.v1.GetStatusResponse.ChannelStatusesEntry
+	120, // 30: conduit.v1.ProviderCredentials.values:type_name -> conduit.v1.ProviderCredentials.ValuesEntry
 	44,  // 31: conduit.v1.ConnectRequest.credentials:type_name -> conduit.v1.ProviderCredentials
 	18,  // 32: conduit.v1.OutgoingMessageRequest.attachments:type_name -> conduit.v1.OutgoingAttachment
 	9,   // 33: conduit.v1.PluginEvent.attachments:type_name -> conduit.v1.ProtoAttachment
@@ -7772,106 +8477,116 @@ var file_conduit_proto_depIdxs = []int32{
 	55,  // 44: conduit.v1.ConnectAccountResponse.account:type_name -> conduit.v1.ProtoAccount
 	5,   // 45: conduit.v1.ProtoPluginInfo.manifest:type_name -> conduit.v1.PluginManifest
 	66,  // 46: conduit.v1.ListPluginsResponse.plugins:type_name -> conduit.v1.ProtoPluginInfo
-	73,  // 47: conduit.v1.GetSettingsResponse.settings:type_name -> conduit.v1.AppSettings
-	73,  // 48: conduit.v1.UpdateSettingsRequest.settings:type_name -> conduit.v1.AppSettings
-	73,  // 49: conduit.v1.UpdateSettingsResponse.settings:type_name -> conduit.v1.AppSettings
-	10,  // 50: conduit.v1.SendReactionResponse.reactions:type_name -> conduit.v1.ProtoReaction
-	12,  // 51: conduit.v1.SendVoteResponse.poll:type_name -> conduit.v1.ProtoPoll
-	17,  // 52: conduit.v1.EditMessageResponse.message:type_name -> conduit.v1.ProtoMessage
-	9,   // 53: conduit.v1.DownloadAttachmentResponse.attachment:type_name -> conduit.v1.ProtoAttachment
-	19,  // 54: conduit.v1.ConduitService.SendMessage:input_type -> conduit.v1.SendMessageRequest
-	21,  // 55: conduit.v1.ConduitService.StreamEvents:input_type -> conduit.v1.StreamEventsRequest
-	24,  // 56: conduit.v1.ConduitService.ListConversations:input_type -> conduit.v1.ListConversationsRequest
-	26,  // 57: conduit.v1.ConduitService.GetMessages:input_type -> conduit.v1.GetMessagesRequest
-	28,  // 58: conduit.v1.ConduitService.GetPinnedMessages:input_type -> conduit.v1.GetPinnedMessagesRequest
-	30,  // 59: conduit.v1.ConduitService.SearchMessages:input_type -> conduit.v1.SearchMessagesRequest
-	32,  // 60: conduit.v1.ConduitService.ListContacts:input_type -> conduit.v1.ListContactsRequest
-	34,  // 61: conduit.v1.ConduitService.MergeContacts:input_type -> conduit.v1.MergeContactsRequest
-	36,  // 62: conduit.v1.ConduitService.SplitChannel:input_type -> conduit.v1.SplitChannelRequest
-	38,  // 63: conduit.v1.ConduitService.SetContactIdentity:input_type -> conduit.v1.SetContactIdentityRequest
-	40,  // 64: conduit.v1.ConduitService.FindContactsByIdentity:input_type -> conduit.v1.FindContactsByIdentityRequest
-	56,  // 65: conduit.v1.ConduitService.ListAccounts:input_type -> conduit.v1.ListAccountsRequest
-	58,  // 66: conduit.v1.ConduitService.AddAccount:input_type -> conduit.v1.AddAccountRequest
-	60,  // 67: conduit.v1.ConduitService.RemoveAccount:input_type -> conduit.v1.RemoveAccountRequest
-	62,  // 68: conduit.v1.ConduitService.ConnectAccount:input_type -> conduit.v1.ConnectAccountRequest
-	64,  // 69: conduit.v1.ConduitService.DisconnectAccount:input_type -> conduit.v1.DisconnectAccountRequest
-	67,  // 70: conduit.v1.ConduitService.ListPlugins:input_type -> conduit.v1.ListPluginsRequest
-	69,  // 71: conduit.v1.ConduitService.InstallPlugin:input_type -> conduit.v1.InstallPluginRequest
-	71,  // 72: conduit.v1.ConduitService.TogglePlugin:input_type -> conduit.v1.TogglePluginRequest
-	74,  // 73: conduit.v1.ConduitService.GetSettings:input_type -> conduit.v1.GetSettingsRequest
-	76,  // 74: conduit.v1.ConduitService.UpdateSettings:input_type -> conduit.v1.UpdateSettingsRequest
-	42,  // 75: conduit.v1.ConduitService.GetStatus:input_type -> conduit.v1.GetStatusRequest
-	78,  // 76: conduit.v1.ConduitService.SendReaction:input_type -> conduit.v1.SendReactionRequest
-	82,  // 77: conduit.v1.ConduitService.SendVote:input_type -> conduit.v1.SendVoteRequest
-	86,  // 78: conduit.v1.ConduitService.ClickButton:input_type -> conduit.v1.ClickButtonRequest
-	90,  // 79: conduit.v1.ConduitService.EditMessage:input_type -> conduit.v1.EditMessageRequest
-	92,  // 80: conduit.v1.ConduitService.DeleteMessage:input_type -> conduit.v1.DeleteMessageRequest
-	94,  // 81: conduit.v1.ConduitService.PinMessage:input_type -> conduit.v1.PinMessageRequest
-	102, // 82: conduit.v1.ConduitService.MarkConversationRead:input_type -> conduit.v1.MarkConversationReadRequest
-	106, // 83: conduit.v1.ConduitService.DownloadAttachment:input_type -> conduit.v1.DownloadAttachmentRequest
-	45,  // 84: conduit.v1.PluginService.Connect:input_type -> conduit.v1.ConnectRequest
-	47,  // 85: conduit.v1.PluginService.Disconnect:input_type -> conduit.v1.DisconnectRequest
-	49,  // 86: conduit.v1.PluginService.SendOutgoingMessage:input_type -> conduit.v1.OutgoingMessageRequest
-	53,  // 87: conduit.v1.PluginService.StreamIncomingEvents:input_type -> conduit.v1.PluginStreamRequest
-	51,  // 88: conduit.v1.PluginService.SyncChatHistory:input_type -> conduit.v1.SyncChatHistoryRequest
-	80,  // 89: conduit.v1.PluginService.SendReaction:input_type -> conduit.v1.PluginReactionRequest
-	84,  // 90: conduit.v1.PluginService.SendVote:input_type -> conduit.v1.PluginVoteRequest
-	88,  // 91: conduit.v1.PluginService.ClickButton:input_type -> conduit.v1.PluginClickButtonRequest
-	96,  // 92: conduit.v1.PluginService.EditMessage:input_type -> conduit.v1.PluginEditMessageRequest
-	98,  // 93: conduit.v1.PluginService.DeleteMessage:input_type -> conduit.v1.PluginDeleteMessageRequest
-	100, // 94: conduit.v1.PluginService.PinMessage:input_type -> conduit.v1.PluginPinMessageRequest
-	104, // 95: conduit.v1.PluginService.MarkRead:input_type -> conduit.v1.PluginMarkReadRequest
-	108, // 96: conduit.v1.PluginService.DownloadMedia:input_type -> conduit.v1.PluginDownloadMediaRequest
-	3,   // 97: conduit.v1.PluginService.GetManifest:input_type -> conduit.v1.GetManifestRequest
-	20,  // 98: conduit.v1.ConduitService.SendMessage:output_type -> conduit.v1.SendMessageResponse
-	22,  // 99: conduit.v1.ConduitService.StreamEvents:output_type -> conduit.v1.EventEnvelope
-	25,  // 100: conduit.v1.ConduitService.ListConversations:output_type -> conduit.v1.ListConversationsResponse
-	27,  // 101: conduit.v1.ConduitService.GetMessages:output_type -> conduit.v1.GetMessagesResponse
-	29,  // 102: conduit.v1.ConduitService.GetPinnedMessages:output_type -> conduit.v1.GetPinnedMessagesResponse
-	31,  // 103: conduit.v1.ConduitService.SearchMessages:output_type -> conduit.v1.SearchMessagesResponse
-	33,  // 104: conduit.v1.ConduitService.ListContacts:output_type -> conduit.v1.ListContactsResponse
-	35,  // 105: conduit.v1.ConduitService.MergeContacts:output_type -> conduit.v1.MergeContactsResponse
-	37,  // 106: conduit.v1.ConduitService.SplitChannel:output_type -> conduit.v1.SplitChannelResponse
-	39,  // 107: conduit.v1.ConduitService.SetContactIdentity:output_type -> conduit.v1.SetContactIdentityResponse
-	41,  // 108: conduit.v1.ConduitService.FindContactsByIdentity:output_type -> conduit.v1.FindContactsByIdentityResponse
-	57,  // 109: conduit.v1.ConduitService.ListAccounts:output_type -> conduit.v1.ListAccountsResponse
-	59,  // 110: conduit.v1.ConduitService.AddAccount:output_type -> conduit.v1.AddAccountResponse
-	61,  // 111: conduit.v1.ConduitService.RemoveAccount:output_type -> conduit.v1.RemoveAccountResponse
-	63,  // 112: conduit.v1.ConduitService.ConnectAccount:output_type -> conduit.v1.ConnectAccountResponse
-	65,  // 113: conduit.v1.ConduitService.DisconnectAccount:output_type -> conduit.v1.DisconnectAccountResponse
-	68,  // 114: conduit.v1.ConduitService.ListPlugins:output_type -> conduit.v1.ListPluginsResponse
-	70,  // 115: conduit.v1.ConduitService.InstallPlugin:output_type -> conduit.v1.InstallPluginResponse
-	72,  // 116: conduit.v1.ConduitService.TogglePlugin:output_type -> conduit.v1.TogglePluginResponse
-	75,  // 117: conduit.v1.ConduitService.GetSettings:output_type -> conduit.v1.GetSettingsResponse
-	77,  // 118: conduit.v1.ConduitService.UpdateSettings:output_type -> conduit.v1.UpdateSettingsResponse
-	43,  // 119: conduit.v1.ConduitService.GetStatus:output_type -> conduit.v1.GetStatusResponse
-	79,  // 120: conduit.v1.ConduitService.SendReaction:output_type -> conduit.v1.SendReactionResponse
-	83,  // 121: conduit.v1.ConduitService.SendVote:output_type -> conduit.v1.SendVoteResponse
-	87,  // 122: conduit.v1.ConduitService.ClickButton:output_type -> conduit.v1.ClickButtonResponse
-	91,  // 123: conduit.v1.ConduitService.EditMessage:output_type -> conduit.v1.EditMessageResponse
-	93,  // 124: conduit.v1.ConduitService.DeleteMessage:output_type -> conduit.v1.DeleteMessageResponse
-	95,  // 125: conduit.v1.ConduitService.PinMessage:output_type -> conduit.v1.PinMessageResponse
-	103, // 126: conduit.v1.ConduitService.MarkConversationRead:output_type -> conduit.v1.MarkConversationReadResponse
-	107, // 127: conduit.v1.ConduitService.DownloadAttachment:output_type -> conduit.v1.DownloadAttachmentResponse
-	46,  // 128: conduit.v1.PluginService.Connect:output_type -> conduit.v1.ConnectResponse
-	48,  // 129: conduit.v1.PluginService.Disconnect:output_type -> conduit.v1.DisconnectResponse
-	50,  // 130: conduit.v1.PluginService.SendOutgoingMessage:output_type -> conduit.v1.OutgoingMessageResponse
-	54,  // 131: conduit.v1.PluginService.StreamIncomingEvents:output_type -> conduit.v1.PluginEvent
-	52,  // 132: conduit.v1.PluginService.SyncChatHistory:output_type -> conduit.v1.SyncChatHistoryResponse
-	81,  // 133: conduit.v1.PluginService.SendReaction:output_type -> conduit.v1.PluginReactionResponse
-	85,  // 134: conduit.v1.PluginService.SendVote:output_type -> conduit.v1.PluginVoteResponse
-	89,  // 135: conduit.v1.PluginService.ClickButton:output_type -> conduit.v1.PluginClickButtonResponse
-	97,  // 136: conduit.v1.PluginService.EditMessage:output_type -> conduit.v1.PluginEditMessageResponse
-	99,  // 137: conduit.v1.PluginService.DeleteMessage:output_type -> conduit.v1.PluginDeleteMessageResponse
-	101, // 138: conduit.v1.PluginService.PinMessage:output_type -> conduit.v1.PluginPinMessageResponse
-	105, // 139: conduit.v1.PluginService.MarkRead:output_type -> conduit.v1.PluginMarkReadResponse
-	109, // 140: conduit.v1.PluginService.DownloadMedia:output_type -> conduit.v1.PluginDownloadMediaResponse
-	5,   // 141: conduit.v1.PluginService.GetManifest:output_type -> conduit.v1.PluginManifest
-	98,  // [98:142] is the sub-list for method output_type
-	54,  // [54:98] is the sub-list for method input_type
-	54,  // [54:54] is the sub-list for extension type_name
-	54,  // [54:54] is the sub-list for extension extendee
-	0,   // [0:54] is the sub-list for field type_name
+	76,  // 47: conduit.v1.UpdatePluginResponse.results:type_name -> conduit.v1.PluginUpdateResult
+	66,  // 48: conduit.v1.CheckUpdatesResponse.plugins:type_name -> conduit.v1.ProtoPluginInfo
+	82,  // 49: conduit.v1.GetSettingsResponse.settings:type_name -> conduit.v1.AppSettings
+	82,  // 50: conduit.v1.UpdateSettingsRequest.settings:type_name -> conduit.v1.AppSettings
+	82,  // 51: conduit.v1.UpdateSettingsResponse.settings:type_name -> conduit.v1.AppSettings
+	10,  // 52: conduit.v1.SendReactionResponse.reactions:type_name -> conduit.v1.ProtoReaction
+	12,  // 53: conduit.v1.SendVoteResponse.poll:type_name -> conduit.v1.ProtoPoll
+	17,  // 54: conduit.v1.EditMessageResponse.message:type_name -> conduit.v1.ProtoMessage
+	9,   // 55: conduit.v1.DownloadAttachmentResponse.attachment:type_name -> conduit.v1.ProtoAttachment
+	19,  // 56: conduit.v1.ConduitService.SendMessage:input_type -> conduit.v1.SendMessageRequest
+	21,  // 57: conduit.v1.ConduitService.StreamEvents:input_type -> conduit.v1.StreamEventsRequest
+	24,  // 58: conduit.v1.ConduitService.ListConversations:input_type -> conduit.v1.ListConversationsRequest
+	26,  // 59: conduit.v1.ConduitService.GetMessages:input_type -> conduit.v1.GetMessagesRequest
+	28,  // 60: conduit.v1.ConduitService.GetPinnedMessages:input_type -> conduit.v1.GetPinnedMessagesRequest
+	30,  // 61: conduit.v1.ConduitService.SearchMessages:input_type -> conduit.v1.SearchMessagesRequest
+	32,  // 62: conduit.v1.ConduitService.ListContacts:input_type -> conduit.v1.ListContactsRequest
+	34,  // 63: conduit.v1.ConduitService.MergeContacts:input_type -> conduit.v1.MergeContactsRequest
+	36,  // 64: conduit.v1.ConduitService.SplitChannel:input_type -> conduit.v1.SplitChannelRequest
+	38,  // 65: conduit.v1.ConduitService.SetContactIdentity:input_type -> conduit.v1.SetContactIdentityRequest
+	40,  // 66: conduit.v1.ConduitService.FindContactsByIdentity:input_type -> conduit.v1.FindContactsByIdentityRequest
+	56,  // 67: conduit.v1.ConduitService.ListAccounts:input_type -> conduit.v1.ListAccountsRequest
+	58,  // 68: conduit.v1.ConduitService.AddAccount:input_type -> conduit.v1.AddAccountRequest
+	60,  // 69: conduit.v1.ConduitService.RemoveAccount:input_type -> conduit.v1.RemoveAccountRequest
+	62,  // 70: conduit.v1.ConduitService.ConnectAccount:input_type -> conduit.v1.ConnectAccountRequest
+	64,  // 71: conduit.v1.ConduitService.DisconnectAccount:input_type -> conduit.v1.DisconnectAccountRequest
+	67,  // 72: conduit.v1.ConduitService.ListPlugins:input_type -> conduit.v1.ListPluginsRequest
+	69,  // 73: conduit.v1.ConduitService.InstallPlugin:input_type -> conduit.v1.InstallPluginRequest
+	71,  // 74: conduit.v1.ConduitService.TogglePlugin:input_type -> conduit.v1.TogglePluginRequest
+	73,  // 75: conduit.v1.ConduitService.UninstallPlugin:input_type -> conduit.v1.UninstallPluginRequest
+	75,  // 76: conduit.v1.ConduitService.UpdatePlugin:input_type -> conduit.v1.UpdatePluginRequest
+	78,  // 77: conduit.v1.ConduitService.CheckUpdates:input_type -> conduit.v1.CheckUpdatesRequest
+	80,  // 78: conduit.v1.ConduitService.MarkPluginsSeen:input_type -> conduit.v1.MarkPluginsSeenRequest
+	83,  // 79: conduit.v1.ConduitService.GetSettings:input_type -> conduit.v1.GetSettingsRequest
+	85,  // 80: conduit.v1.ConduitService.UpdateSettings:input_type -> conduit.v1.UpdateSettingsRequest
+	42,  // 81: conduit.v1.ConduitService.GetStatus:input_type -> conduit.v1.GetStatusRequest
+	87,  // 82: conduit.v1.ConduitService.SendReaction:input_type -> conduit.v1.SendReactionRequest
+	91,  // 83: conduit.v1.ConduitService.SendVote:input_type -> conduit.v1.SendVoteRequest
+	95,  // 84: conduit.v1.ConduitService.ClickButton:input_type -> conduit.v1.ClickButtonRequest
+	99,  // 85: conduit.v1.ConduitService.EditMessage:input_type -> conduit.v1.EditMessageRequest
+	101, // 86: conduit.v1.ConduitService.DeleteMessage:input_type -> conduit.v1.DeleteMessageRequest
+	103, // 87: conduit.v1.ConduitService.PinMessage:input_type -> conduit.v1.PinMessageRequest
+	111, // 88: conduit.v1.ConduitService.MarkConversationRead:input_type -> conduit.v1.MarkConversationReadRequest
+	115, // 89: conduit.v1.ConduitService.DownloadAttachment:input_type -> conduit.v1.DownloadAttachmentRequest
+	45,  // 90: conduit.v1.PluginService.Connect:input_type -> conduit.v1.ConnectRequest
+	47,  // 91: conduit.v1.PluginService.Disconnect:input_type -> conduit.v1.DisconnectRequest
+	49,  // 92: conduit.v1.PluginService.SendOutgoingMessage:input_type -> conduit.v1.OutgoingMessageRequest
+	53,  // 93: conduit.v1.PluginService.StreamIncomingEvents:input_type -> conduit.v1.PluginStreamRequest
+	51,  // 94: conduit.v1.PluginService.SyncChatHistory:input_type -> conduit.v1.SyncChatHistoryRequest
+	89,  // 95: conduit.v1.PluginService.SendReaction:input_type -> conduit.v1.PluginReactionRequest
+	93,  // 96: conduit.v1.PluginService.SendVote:input_type -> conduit.v1.PluginVoteRequest
+	97,  // 97: conduit.v1.PluginService.ClickButton:input_type -> conduit.v1.PluginClickButtonRequest
+	105, // 98: conduit.v1.PluginService.EditMessage:input_type -> conduit.v1.PluginEditMessageRequest
+	107, // 99: conduit.v1.PluginService.DeleteMessage:input_type -> conduit.v1.PluginDeleteMessageRequest
+	109, // 100: conduit.v1.PluginService.PinMessage:input_type -> conduit.v1.PluginPinMessageRequest
+	113, // 101: conduit.v1.PluginService.MarkRead:input_type -> conduit.v1.PluginMarkReadRequest
+	117, // 102: conduit.v1.PluginService.DownloadMedia:input_type -> conduit.v1.PluginDownloadMediaRequest
+	3,   // 103: conduit.v1.PluginService.GetManifest:input_type -> conduit.v1.GetManifestRequest
+	20,  // 104: conduit.v1.ConduitService.SendMessage:output_type -> conduit.v1.SendMessageResponse
+	22,  // 105: conduit.v1.ConduitService.StreamEvents:output_type -> conduit.v1.EventEnvelope
+	25,  // 106: conduit.v1.ConduitService.ListConversations:output_type -> conduit.v1.ListConversationsResponse
+	27,  // 107: conduit.v1.ConduitService.GetMessages:output_type -> conduit.v1.GetMessagesResponse
+	29,  // 108: conduit.v1.ConduitService.GetPinnedMessages:output_type -> conduit.v1.GetPinnedMessagesResponse
+	31,  // 109: conduit.v1.ConduitService.SearchMessages:output_type -> conduit.v1.SearchMessagesResponse
+	33,  // 110: conduit.v1.ConduitService.ListContacts:output_type -> conduit.v1.ListContactsResponse
+	35,  // 111: conduit.v1.ConduitService.MergeContacts:output_type -> conduit.v1.MergeContactsResponse
+	37,  // 112: conduit.v1.ConduitService.SplitChannel:output_type -> conduit.v1.SplitChannelResponse
+	39,  // 113: conduit.v1.ConduitService.SetContactIdentity:output_type -> conduit.v1.SetContactIdentityResponse
+	41,  // 114: conduit.v1.ConduitService.FindContactsByIdentity:output_type -> conduit.v1.FindContactsByIdentityResponse
+	57,  // 115: conduit.v1.ConduitService.ListAccounts:output_type -> conduit.v1.ListAccountsResponse
+	59,  // 116: conduit.v1.ConduitService.AddAccount:output_type -> conduit.v1.AddAccountResponse
+	61,  // 117: conduit.v1.ConduitService.RemoveAccount:output_type -> conduit.v1.RemoveAccountResponse
+	63,  // 118: conduit.v1.ConduitService.ConnectAccount:output_type -> conduit.v1.ConnectAccountResponse
+	65,  // 119: conduit.v1.ConduitService.DisconnectAccount:output_type -> conduit.v1.DisconnectAccountResponse
+	68,  // 120: conduit.v1.ConduitService.ListPlugins:output_type -> conduit.v1.ListPluginsResponse
+	70,  // 121: conduit.v1.ConduitService.InstallPlugin:output_type -> conduit.v1.InstallPluginResponse
+	72,  // 122: conduit.v1.ConduitService.TogglePlugin:output_type -> conduit.v1.TogglePluginResponse
+	74,  // 123: conduit.v1.ConduitService.UninstallPlugin:output_type -> conduit.v1.UninstallPluginResponse
+	77,  // 124: conduit.v1.ConduitService.UpdatePlugin:output_type -> conduit.v1.UpdatePluginResponse
+	79,  // 125: conduit.v1.ConduitService.CheckUpdates:output_type -> conduit.v1.CheckUpdatesResponse
+	81,  // 126: conduit.v1.ConduitService.MarkPluginsSeen:output_type -> conduit.v1.MarkPluginsSeenResponse
+	84,  // 127: conduit.v1.ConduitService.GetSettings:output_type -> conduit.v1.GetSettingsResponse
+	86,  // 128: conduit.v1.ConduitService.UpdateSettings:output_type -> conduit.v1.UpdateSettingsResponse
+	43,  // 129: conduit.v1.ConduitService.GetStatus:output_type -> conduit.v1.GetStatusResponse
+	88,  // 130: conduit.v1.ConduitService.SendReaction:output_type -> conduit.v1.SendReactionResponse
+	92,  // 131: conduit.v1.ConduitService.SendVote:output_type -> conduit.v1.SendVoteResponse
+	96,  // 132: conduit.v1.ConduitService.ClickButton:output_type -> conduit.v1.ClickButtonResponse
+	100, // 133: conduit.v1.ConduitService.EditMessage:output_type -> conduit.v1.EditMessageResponse
+	102, // 134: conduit.v1.ConduitService.DeleteMessage:output_type -> conduit.v1.DeleteMessageResponse
+	104, // 135: conduit.v1.ConduitService.PinMessage:output_type -> conduit.v1.PinMessageResponse
+	112, // 136: conduit.v1.ConduitService.MarkConversationRead:output_type -> conduit.v1.MarkConversationReadResponse
+	116, // 137: conduit.v1.ConduitService.DownloadAttachment:output_type -> conduit.v1.DownloadAttachmentResponse
+	46,  // 138: conduit.v1.PluginService.Connect:output_type -> conduit.v1.ConnectResponse
+	48,  // 139: conduit.v1.PluginService.Disconnect:output_type -> conduit.v1.DisconnectResponse
+	50,  // 140: conduit.v1.PluginService.SendOutgoingMessage:output_type -> conduit.v1.OutgoingMessageResponse
+	54,  // 141: conduit.v1.PluginService.StreamIncomingEvents:output_type -> conduit.v1.PluginEvent
+	52,  // 142: conduit.v1.PluginService.SyncChatHistory:output_type -> conduit.v1.SyncChatHistoryResponse
+	90,  // 143: conduit.v1.PluginService.SendReaction:output_type -> conduit.v1.PluginReactionResponse
+	94,  // 144: conduit.v1.PluginService.SendVote:output_type -> conduit.v1.PluginVoteResponse
+	98,  // 145: conduit.v1.PluginService.ClickButton:output_type -> conduit.v1.PluginClickButtonResponse
+	106, // 146: conduit.v1.PluginService.EditMessage:output_type -> conduit.v1.PluginEditMessageResponse
+	108, // 147: conduit.v1.PluginService.DeleteMessage:output_type -> conduit.v1.PluginDeleteMessageResponse
+	110, // 148: conduit.v1.PluginService.PinMessage:output_type -> conduit.v1.PluginPinMessageResponse
+	114, // 149: conduit.v1.PluginService.MarkRead:output_type -> conduit.v1.PluginMarkReadResponse
+	118, // 150: conduit.v1.PluginService.DownloadMedia:output_type -> conduit.v1.PluginDownloadMediaResponse
+	5,   // 151: conduit.v1.PluginService.GetManifest:output_type -> conduit.v1.PluginManifest
+	104, // [104:152] is the sub-list for method output_type
+	56,  // [56:104] is the sub-list for method input_type
+	56,  // [56:56] is the sub-list for extension type_name
+	56,  // [56:56] is the sub-list for extension extendee
+	0,   // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_conduit_proto_init() }
@@ -7893,7 +8608,7 @@ func file_conduit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conduit_proto_rawDesc), len(file_conduit_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   109,
+			NumMessages:   118,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
