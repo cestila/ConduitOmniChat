@@ -174,7 +174,8 @@ function createHarness(fixtures = {}) {
     pinnedMessages = {},
   } = fixtures;
 
-  const calls = { merge: [], identity: [], syncContacts: [], startChat: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], togglePlugin: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [], fetchLinkPreview: [] };
+  const calls = { merge: [], identity: [], syncContacts: [], startChat: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], uninstallPlugin: [], updatePlugin: [], togglePlugin: [], checkUpdates: [], markPluginsSeen: [], getAppInfo: [], checkAppUpdate: [], downloadAppUpdate: [], installAppUpdate: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [], fetchLinkPreview: [] };
+  const appUpdateListeners = [];
 
   const registry = new Map();
   const docListeners = {};
@@ -252,7 +253,7 @@ function createHarness(fixtures = {}) {
       (winListeners[name] = winListeners[name] || []).push(fn);
     },
     conduitAPI: {
-      getStatus: async () => ({ version: 'test' }),
+      getStatus: async () => fixtures.status || ({ core_version: 'test', protocol_version: 1, tui_version: '' }),
       getDaemonInfo: async () => ({ isOwned: true, isRunning: true, port: 50051 }),
       restartDaemon: async () => ({ success: true }),
       restartApp: async () => ({ success: true }),
@@ -367,13 +368,69 @@ function createHarness(fixtures = {}) {
         calls.pinMessage.push([messageId, pinned]);
         return { success: true, is_pinned: pinned };
       },
-      installPlugin: async (pluginId) => {
-        calls.installPlugin.push([pluginId]);
+      installPlugin: async (pluginId, version) => {
+        calls.installPlugin.push([pluginId, version]);
         return { success: true, message: `Plugin ${pluginId} instalado` };
+      },
+      uninstallPlugin: async (pluginId) => {
+        calls.uninstallPlugin.push([pluginId]);
+        return { success: true, message: `Plugin ${pluginId} desinstalado` };
+      },
+      updatePlugin: async (pluginId, all) => {
+        calls.updatePlugin.push([pluginId, all]);
+        return { success: true, message: 'Actualización completada', results: [] };
       },
       togglePlugin: async (pluginId, enabled) => {
         calls.togglePlugin.push([pluginId, enabled]);
         return { success: true };
+      },
+      checkUpdates: async (forceRefresh, guiVersion) => {
+        calls.checkUpdates.push([forceRefresh, guiVersion]);
+        return fixtures.updatesResponse || {
+          registry_reachable: true,
+          core_latest_version: '',
+          core_release_url: '',
+          core_update_available: false,
+          gui_latest_version: '',
+          gui_release_url: '',
+          gui_update_available: false,
+          plugins: plugins,
+          updates_available_count: 0,
+          new_plugins_count: 0,
+          checked_at: '',
+        };
+      },
+      markPluginsSeen: async (pluginIds) => {
+        calls.markPluginsSeen.push([pluginIds]);
+        return { success: true };
+      },
+      getAppInfo: async () => {
+        calls.getAppInfo.push(true);
+        return fixtures.appInfo || {
+          version: '0.1.1',
+          platform: 'linux',
+          packagingMode: 'dev',
+          selfUpdateSupported: false,
+        };
+      },
+      checkAppUpdate: async () => {
+        calls.checkAppUpdate.push(true);
+        return fixtures.appUpdateCheck || { supported: false, packagingMode: 'dev', updateAvailable: false };
+      },
+      downloadAppUpdate: async () => {
+        calls.downloadAppUpdate.push(true);
+        return { supported: false, started: false };
+      },
+      installAppUpdate: async () => {
+        calls.installAppUpdate.push(true);
+        return { supported: false, installed: false };
+      },
+      onAppUpdateEvent: (cb) => {
+        appUpdateListeners.push(cb);
+        return () => {
+          const idx = appUpdateListeners.indexOf(cb);
+          if (idx >= 0) appUpdateListeners.splice(idx, 1);
+        };
       },
       openPath: async (filePath) => {
         calls.openPath.push(filePath);
@@ -463,8 +520,8 @@ function createHarness(fixtures = {}) {
     'handleClickButton',
     // Edición, Borrado y Fijado
     'startEditMessage', 'cancelEditMessage', 'handleDeleteMessage', 'handlePinMessage', 'updatePinnedBanner',
-    // Plugins y Ajustes
-    'renderPlugins', 'loadPlugins', 'applySettingsUI', 'applySettingsToForm', 'saveSettingsFromForm',
+    // Plugins, Estado, Acerca de y Ajustes
+    'renderPlugins', 'loadPlugins', 'updatePluginsBadge', 'checkDaemonStatus', 'loadAboutInfo', 'checkForUpdates', 'applySettingsUI', 'applySettingsToForm', 'saveSettingsFromForm',
     // Lecturas y sincronización
     'markActiveConversationAsRead', 'setupRealtimeEvents',
     // Adjuntos a demanda
@@ -504,6 +561,9 @@ function createHarness(fixtures = {}) {
     fireDocumentEvent: (name, extra = {}) => (docListeners[name] || []).forEach(fn => fn({ type: name, preventDefault() {}, stopPropagation() {}, ...extra })),
     emitEvent: (envelope) => {
       eventListeners.forEach(fn => fn(envelope));
+    },
+    emitAppUpdateEvent: (evt) => {
+      appUpdateListeners.forEach(fn => fn(evt));
     }
   };
   exports.forEach(name => { api[name] = sandbox[`__${name}`]; });

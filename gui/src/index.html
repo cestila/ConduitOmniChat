@@ -38,6 +38,7 @@
       <!-- Plugins & Ajustes -->
       <div class="provider-pill" id="btn-plugins" title="Plugins & Marketplace">
         <div class="provider-icon"><i class="fa-solid fa-puzzle-piece"></i></div>
+        <span id="plugins-update-badge" class="nav-badge hidden"></span>
       </div>
       <div class="provider-pill" id="btn-settings" title="Configuración">
         <div class="provider-icon"><i class="fa-solid fa-gear"></i></div>
@@ -268,10 +269,25 @@
       <!-- VISTA DE PLUGINS & MARKETPLACE -->
       <section id="view-plugins" class="view-panel">
         <header class="panel-header">
-          <h2>Plugins y Extensiones del Core</h2>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <h2>Plugins y Extensiones del Core</h2>
+            <button class="btn-card btn-secondary" id="btn-check-plugin-updates" type="button">
+              <i class="fa-solid fa-magnifying-glass"></i> Buscar actualizaciones
+            </button>
+            <button class="btn-card btn-primary" id="btn-update-all-plugins" type="button" disabled>
+              <i class="fa-solid fa-arrows-rotate"></i> Actualizar todos
+            </button>
+          </div>
           <button class="icon-btn btn-close-panel" data-close="view-plugins"><i class="fa-solid fa-xmark"></i></button>
         </header>
         <div class="panel-body">
+          <div class="plugins-custom-install">
+            <input type="text" id="plugin-custom-repo-input" class="form-input" placeholder="owner/conduit-plugin-<id>" />
+            <button class="btn-card btn-primary" id="btn-install-custom-plugin" type="button">
+              <i class="fa-solid fa-download"></i> Instalar desde GitHub
+            </button>
+          </div>
+          <div id="plugins-action-feedback" class="account-status-message hidden"></div>
           <div class="plugins-list" id="plugins-list">
             <!-- Renderizado dinámicamente -->
           </div>
@@ -538,6 +554,60 @@
                   <i class="fa-solid fa-arrows-rotate"></i> Reiniciar Todo
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- 7. Acerca de Conduit & Actualizaciones -->
+          <div class="settings-group" id="about-section">
+            <h3><i class="fa-solid fa-circle-info"></i> Acerca de Conduit</h3>
+            <div class="about-versions-grid">
+              <div class="about-version-item">
+                <span class="about-label">GUI</span>
+                <strong id="about-gui-version">-</strong>
+              </div>
+              <div class="about-version-item">
+                <span class="about-label">Core (conduitd)</span>
+                <strong id="about-core-version">-</strong>
+              </div>
+              <div class="about-version-item">
+                <span class="about-label">Protocolo SDK</span>
+                <strong id="about-sdk-protocol">-</strong>
+              </div>
+              <div class="about-version-item">
+                <span class="about-label">TUI</span>
+                <strong id="about-tui-version">Not installed</strong>
+              </div>
+              <div class="about-version-item">
+                <span class="about-label">Plataforma / Empaquetado</span>
+                <strong id="about-packaging">-</strong>
+              </div>
+            </div>
+
+            <div class="about-update-actions" style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <button class="btn-card btn-primary" id="btn-check-updates" type="button">
+                <i class="fa-solid fa-rotate"></i> Buscar actualizaciones
+              </button>
+              <span id="about-checked-at" class="about-checked-at text-muted" style="font-size:12px;"></span>
+              <div id="about-update-status" class="about-update-banner hidden"></div>
+            </div>
+
+            <div style="margin-top:16px;">
+              <strong style="display:block;margin-bottom:8px;font-size:13px;">Plugins instalados</strong>
+              <table class="about-plugins-table" id="about-plugins-table">
+                <thead>
+                  <tr>
+                    <th>Plugin</th>
+                    <th>Origen</th>
+                    <th>Versión</th>
+                    <th>Última</th>
+                    <th>Compatibilidad</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="about-plugins-tbody">
+                  <!-- Renderizado dinámicamente -->
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

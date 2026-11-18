@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 	"github.com/cestila/ConduitOmniChat/core/pkg/eventbus"
 	"github.com/cestila/ConduitOmniChat/core/pkg/identity"
@@ -20,6 +21,7 @@ import (
 	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
 	"github.com/cestila/ConduitOmniChat/core/pkg/storage"
 	conduitv1 "github.com/cestila/ConduitOmniChat/sdk/conduitv1"
+	"github.com/cestila/ConduitOmniChat/sdk/pluginsdk"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -133,23 +135,46 @@ type Server struct {
 	historyCooldown map[string]time.Time
 
 	// installer y loader permiten instalar plugins desde GitHub Releases y cargarlos en caliente.
-	installer PluginInstaller
-	loader    PluginLoader
+	installer     PluginInstaller
+	loader        PluginLoader
+	stopper       PluginStopper
+	registry      *pluginmgr.RegistryClient
+	manifestStore *pluginmgr.ManifestStore
+	tuiVersion    string
 }
 
 // PluginInstaller descarga e instala plugins (lo implementa plugininstall.Installer).
 type PluginInstaller interface {
 	Install(ctx context.Context, spec, version string) (plugininstall.Result, error)
+	PrepareUpdate(ctx context.Context, spec, version string) (*plugininstall.PreparedInstall, error)
+	Remove(id string) (string, error)
+	IsManagedPath(binaryPath string) bool
+	Resolve(spec string) (id, repo string, err error)
 }
 
 // PluginLoader lanza un plugin recién instalado sin reiniciar el daemon.
 type PluginLoader func(ctx context.Context, path string) error
+
+// PluginStopper detiene un plugin en ejecución por id.
+type PluginStopper func(id string) error
 
 // SetPluginInstaller inyecta el instalador usado por InstallPlugin.
 func (s *Server) SetPluginInstaller(i PluginInstaller) { s.installer = i }
 
 // SetPluginLoader inyecta el callback que carga en caliente un plugin instalado.
 func (s *Server) SetPluginLoader(l PluginLoader) { s.loader = l }
+
+// SetPluginStopper inyecta el callback que detiene un plugin en ejecución.
+func (s *Server) SetPluginStopper(fn PluginStopper) { s.stopper = fn }
+
+// SetRegistryClient inyecta el cliente del registro remoto de plugins.
+func (s *Server) SetRegistryClient(r *pluginmgr.RegistryClient) { s.registry = r }
+
+// SetManifestStore inyecta el almacén local plugins-manifest.json.
+func (s *Server) SetManifestStore(m *pluginmgr.ManifestStore) { s.manifestStore = m }
+
+// SetTUIVersion establece la versión detectada de conduit-tui para GetStatus.
+func (s *Server) SetTUIVersion(v string) { s.tuiVersion = strings.TrimSpace(v) }
 
 // NewServer inicializa una nueva instancia del servidor gRPC.
 func NewServer(db *storage.DB, bus *eventbus.Bus, graph *identity.Graph, plugins *pluginmgr.Manager) *Server {
@@ -1108,79 +1133,6 @@ func (s *Server) DisconnectAccount(ctx context.Context, req *conduitv1.Disconnec
 	return &conduitv1.DisconnectAccountResponse{Success: true}, nil
 }
 
-// ListPlugins devuelve los plugins descubiertos (instalados) seguidos de los oficiales del catálogo que no lo están.
-func (s *Server) ListPlugins(ctx context.Context, req *conduitv1.ListPluginsRequest) (*conduitv1.ListPluginsResponse, error) {
-	plugins := []*conduitv1.ProtoPluginInfo{}
-	seen := map[string]bool{}
-	if s.plugins != nil {
-		for _, d := range s.plugins.Discovered() {
-			m := d.Manifest
-			id := m.GetId()
-			seen[id] = true
-			repo := ""
-			if entry, ok := pluginmgr.CatalogEntryFor(id); ok {
-				repo = entry.Repository
-			}
-			plugins = append(plugins, &conduitv1.ProtoPluginInfo{
-				Id:          id,
-				Name:        m.GetDisplayName(),
-				Description: m.GetDescription(),
-				Version:     m.GetVersion(),
-				Author:      m.GetAuthor(),
-				IsInstalled: true,
-				IsEnabled:   s.db.GetSetting(ctx, fmt.Sprintf("plugin_%s_enabled", id), "true") == "true",
-				Manifest:    m,
-				Path:        d.Path,
-				Repository:  repo,
-			})
-		}
-	}
-	for _, entry := range pluginmgr.Catalog {
-		if seen[entry.ID] {
-			continue
-		}
-		plugins = append(plugins, &conduitv1.ProtoPluginInfo{
-			Id:          entry.ID,
-			Name:        entry.Name,
-			Description: entry.Description,
-			Repository:  entry.Repository,
-		})
-	}
-	return &conduitv1.ListPluginsResponse{Plugins: plugins}, nil
-}
-
-// InstallPlugin instala el último release de un plugin oficial del catálogo, lo habilita y,
-// si hay un cargador inyectado, lo lanza en caliente. Solo se aceptan ids del catálogo.
-func (s *Server) InstallPlugin(ctx context.Context, req *conduitv1.InstallPluginRequest) (*conduitv1.InstallPluginResponse, error) {
-	fail := func(msg string) (*conduitv1.InstallPluginResponse, error) {
-		return &conduitv1.InstallPluginResponse{Success: false, Message: msg}, nil
-	}
-	if _, ok := pluginmgr.CatalogEntryFor(req.PluginId); !ok {
-		return fail(fmt.Sprintf("plugin %q is not an official plugin; use `conduitd plugin install owner/repo` for third-party plugins", req.PluginId))
-	}
-	if s.installer == nil {
-		return fail("plugin installation is not available in this daemon")
-	}
-	res, err := s.installer.Install(ctx, req.PluginId, "")
-	if err != nil {
-		return fail(err.Error())
-	}
-	_ = s.db.SetSetting(ctx, fmt.Sprintf("plugin_%s_enabled", res.ID), "true")
-
-	msg := fmt.Sprintf("Plugin '%s' %s installed at %s", res.ID, res.Version, res.Path)
-	switch {
-	case s.loader == nil:
-		msg += "; restart conduitd to load it"
-	default:
-		if err := s.loader(ctx, res.Path); err != nil {
-			msg += fmt.Sprintf("; it could not be loaded (%v), restart conduitd to load it", err)
-		} else {
-			msg += " and loaded"
-		}
-	}
-	return &conduitv1.InstallPluginResponse{Success: true, Message: msg}, nil
-}
-
 // TogglePlugin activa o desactiva un plugin de forma persistente.
 func (s *Server) TogglePlugin(ctx context.Context, req *conduitv1.TogglePluginRequest) (*conduitv1.TogglePluginResponse, error) {
 	key := fmt.Sprintf("plugin_%s_enabled", req.PluginId)
@@ -1210,8 +1162,10 @@ func (s *Server) UpdateSettings(ctx context.Context, req *conduitv1.UpdateSettin
 func (s *Server) GetStatus(ctx context.Context, req *conduitv1.GetStatusRequest) (*conduitv1.GetStatusResponse, error) {
 	uptime := int64(time.Since(s.startTime).Seconds())
 	return &conduitv1.GetStatusResponse{
-		CoreVersion:   "0.1.0-alpha",
-		UptimeSeconds: uptime,
+		CoreVersion:     buildinfo.Version,
+		ProtocolVersion: pluginsdk.ProtocolVersion,
+		TuiVersion:      s.tuiVersion,
+		UptimeSeconds:   uptime,
 		ChannelStatuses: map[string]string{
 			"storage":  "connected (sqlite fts5)",
 			"bus":      "active",

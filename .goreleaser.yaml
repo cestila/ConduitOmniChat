@@ -14,6 +14,9 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
+      - -X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Version=v{{ .Version }}
+      - -X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Date={{ .Date }}
 
 archives:
   - id: default

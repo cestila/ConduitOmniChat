@@ -48,15 +48,24 @@ jobs:
           cache-dependency-path: gui/package-lock.json
       - name: build conduitd (linux)
         if: runner.os == 'Linux'
-        run: make daemon
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+          COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          make daemon VERSION="$VERSION" COMMIT="$COMMIT" BUILD_DATE="$BUILD_DATE"
       - name: build conduitd (windows)
         if: runner.os == 'Windows'
         shell: bash
         env:
           CGO_ENABLED: '0'
         run: |
+          VERSION="${GITHUB_REF_NAME:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+          COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Version=${VERSION} -X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Commit=${COMMIT} -X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Date=${BUILD_DATE}"
           mkdir -p bin
-          cd core && go build -o ../bin/conduitd.exe ./cmd/conduitd
+          cd core && go build -ldflags "$LDFLAGS" -o ../bin/conduitd.exe ./cmd/conduitd
       - run: npm ci
         working-directory: gui
       - name: version the app from the release tag
@@ -72,3 +81,4 @@ jobs:
             gui/dist/*.AppImage
             gui/dist/*.tar.gz
             gui/dist/*.exe
+            gui/dist/latest*.yml

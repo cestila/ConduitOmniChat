@@ -69,6 +69,7 @@ func TestListPluginsEnabledDefaultsTrue(t *testing.T) {
 type fakePluginInstaller struct {
 	spec, version string
 	err           error
+	removed       string
 }
 
 func (f *fakePluginInstaller) Install(_ context.Context, spec, version string) (plugininstall.Result, error) {
@@ -76,7 +77,32 @@ func (f *fakePluginInstaller) Install(_ context.Context, spec, version string) (
 	if f.err != nil {
 		return plugininstall.Result{}, f.err
 	}
-	return plugininstall.Result{ID: spec, Version: "v1.2.3", Path: "/p/conduit-plugin-" + spec}, nil
+	id := spec
+	if strings.Contains(spec, "/") {
+		parts := strings.Split(spec, "/")
+		id = strings.TrimPrefix(parts[len(parts)-1], pluginmgr.BinaryPrefix)
+	}
+	return plugininstall.Result{ID: id, Version: "v1.2.3", Path: "/p/conduit-plugin-" + id}, nil
+}
+
+func (f *fakePluginInstaller) PrepareUpdate(_ context.Context, spec, version string) (*plugininstall.PreparedInstall, error) {
+	return nil, errors.New("not implemented in fake")
+}
+
+func (f *fakePluginInstaller) Remove(id string) (string, error) {
+	f.removed = id
+	if f.err != nil {
+		return "", f.err
+	}
+	return "/p/conduit-plugin-" + id, nil
+}
+
+func (f *fakePluginInstaller) IsManagedPath(binaryPath string) bool {
+	return strings.HasPrefix(binaryPath, "/p/")
+}
+
+func (f *fakePluginInstaller) Resolve(spec string) (string, string, error) {
+	return plugininstall.New("/p").Resolve(spec)
 }
 
 func TestInstallPluginSuccessEnablesAndLoads(t *testing.T) {
@@ -153,11 +179,11 @@ func TestInstallPluginWithoutInstallerFails(t *testing.T) {
 	}
 }
 
-func TestInstallPluginRejectsNonCatalogID(t *testing.T) {
+func TestInstallPluginRejectsInvalidSpecs(t *testing.T) {
 	srv, _ := newMediaTestServer(t)
 	fi := &fakePluginInstaller{}
 	srv.SetPluginInstaller(fi)
-	for _, id := range []string{"evil/conduit-plugin-x", "../x", "unknown"} {
+	for _, id := range []string{"evil/not-a-plugin", "../x", "unknown"} {
 		resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: id})
 		if err != nil || resp.Success || fi.spec != "" {
 			t.Fatalf("%q: resp=%+v spec=%q", id, resp, fi.spec)

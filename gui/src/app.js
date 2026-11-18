@@ -96,6 +96,23 @@ const el = {
   btnSettingRestartDaemon: document.getElementById('btn-setting-restart-daemon'),
   btnSettingRestartApp: document.getElementById('btn-setting-restart-app'),
 
+  // Plugins & Updates & About
+  pluginsUpdateBadge: document.getElementById('plugins-update-badge'),
+  btnCheckPluginUpdates: document.getElementById('btn-check-plugin-updates'),
+  btnUpdateAllPlugins: document.getElementById('btn-update-all-plugins'),
+  pluginCustomRepoInput: document.getElementById('plugin-custom-repo-input'),
+  btnInstallCustomPlugin: document.getElementById('btn-install-custom-plugin'),
+  pluginsActionFeedback: document.getElementById('plugins-action-feedback'),
+  aboutGuiVersion: document.getElementById('about-gui-version'),
+  aboutCoreVersion: document.getElementById('about-core-version'),
+  aboutSdkProtocol: document.getElementById('about-sdk-protocol'),
+  aboutTuiVersion: document.getElementById('about-tui-version'),
+  aboutPackaging: document.getElementById('about-packaging'),
+  aboutCheckedAt: document.getElementById('about-checked-at'),
+  aboutPluginsTbody: document.getElementById('about-plugins-tbody'),
+  btnCheckUpdates: document.getElementById('btn-check-updates'),
+  aboutUpdateStatus: document.getElementById('about-update-status'),
+
   // Contactos Unificados
   contactsList: document.getElementById('contacts-list'),
   contactsSearchInput: document.getElementById('contacts-search-input'),
@@ -134,7 +151,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConversations();
   await loadContacts();
   await loadAccounts();
+  await loadAboutInfo();
   setupRealtimeEvents();
+  setupAppUpdateEvents();
+  if (state.appInfo && state.appInfo.selfUpdateSupported === false && window.conduitAPI.checkUpdates) {
+    checkForUpdates(false, { background: true });
+  }
 
   // Polling de salud cada 10s
   setInterval(checkDaemonStatus, 10000);
@@ -150,8 +172,10 @@ async function checkDaemonStatus() {
     }
 
     if (status && !status.error) {
+      state.daemonStatus = status;
+      const coreVer = status.core_version || '1.0';
       el.daemonStatusIndicator.querySelector('.status-dot').className = 'status-dot online';
-      const mode = (daemonInfo && daemonInfo.isOwned) ? `Sidecar [PID ${daemonInfo.pid}]` : `v${status.version || '1.0'}`;
+      const mode = (daemonInfo && daemonInfo.isOwned) ? `Sidecar [PID ${daemonInfo.pid}]` : `v${coreVer}`;
       el.daemonStatusText.textContent = `conduitd ${mode} OK`;
 
       if (el.settingDaemonInfoText) {
@@ -160,7 +184,7 @@ async function checkDaemonStatus() {
         } else if (daemonInfo && daemonInfo.isRunning) {
           el.settingDaemonInfoText.textContent = `Conectado a demonio externo en 127.0.0.1:${daemonInfo.port || 50051}.`;
         } else {
-          el.settingDaemonInfoText.textContent = `En línea (v${status.version || '1.0'}).`;
+          el.settingDaemonInfoText.textContent = `En línea (v${coreVer}).`;
         }
       }
     } else {
@@ -2739,11 +2763,48 @@ async function loadPlugins() {
     const plugins = await window.conduitAPI.listPlugins();
     state.plugins = plugins || [];
     rebuildProviderRegistry(state.plugins);
+    updatePluginsBadge();
     renderPlugins();
     refreshProviderViews();
   } catch (err) {
     console.error('Error loadPlugins:', err);
   }
+}
+
+function updatePluginsBadge() {
+  const plugins = state.plugins || [];
+  const updatesCount = plugins.filter(p => Boolean(p.update_available)).length;
+  const newCount = plugins.filter(p => Boolean(p.is_new) && !p.update_available).length;
+  const totalCount = updatesCount + newCount;
+
+  if (el.pluginsUpdateBadge) {
+    if (totalCount > 0) {
+      el.pluginsUpdateBadge.textContent = String(totalCount);
+      el.pluginsUpdateBadge.classList.remove('hidden');
+    } else {
+      el.pluginsUpdateBadge.textContent = '';
+      el.pluginsUpdateBadge.classList.add('hidden');
+    }
+  }
+
+  if (el.btnUpdateAllPlugins) {
+    el.btnUpdateAllPlugins.disabled = !plugins.some(
+      p => Boolean(p.update_available) && !p.managed_externally && p.compatible !== false
+    );
+  }
+}
+
+function showPluginsFeedback(message, isError = false) {
+  if (!el.pluginsActionFeedback) return;
+  if (!message) {
+    el.pluginsActionFeedback.textContent = '';
+    el.pluginsActionFeedback.classList.add('hidden');
+    el.pluginsActionFeedback.classList.remove('account-status-message-error');
+    return;
+  }
+  el.pluginsActionFeedback.textContent = message;
+  el.pluginsActionFeedback.classList.remove('hidden');
+  el.pluginsActionFeedback.classList.toggle('account-status-message-error', Boolean(isError));
 }
 
 // Vuelve a pintar lo que depende de los manifiestos (selector de alta, cuentas, badges).
@@ -2767,10 +2828,12 @@ function renderPlugins() {
   state.plugins.forEach(p => {
     const isEnabled = p.is_enabled !== undefined ? p.is_enabled : (p.enabled || false);
     const isInstalled = p.is_installed !== undefined ? p.is_installed : true;
+    const isCompatible = p.compatible !== false;
+    const isExternal = Boolean(p.managed_externally);
     const div = document.createElement('div');
     div.className = 'account-card';
     div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
         <div>
           <h4>${escapeHTML(p.name || p.id)} (v${escapeHTML(p.version || '1.0')})</h4>
           <p style="font-size:13px;color:var(--text-muted)">${escapeHTML(p.description || 'Plugin oficial de canal')}</p>
@@ -2779,26 +2842,43 @@ function renderPlugins() {
           ${p.repository ? `<p style="font-size:11px;color:var(--text-dim);margin-top:2px;">Repositorio: ${escapeHTML(p.repository)}</p>` : ''}
           ${isInstalled && p.path ? `<p style="font-size:11px;color:var(--text-dim);margin-top:2px;word-break:break-all;">Ruta: ${escapeHTML(p.path)}</p>` : ''}
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">
+            ${p.is_third_party ? 'Third-Party' : 'Official'}
+          </span>
+          ${p.is_new ? '<span class="account-status-badge status-badge-new">Nuevo</span>' : ''}
+          ${p.update_available && p.latest_version ? `<span class="account-status-badge status-badge-update">Actualización v${escapeHTML(p.latest_version)}</span>` : ''}
+          ${isExternal ? '<span class="account-status-badge status-badge-external">Gestionado externamente</span>' : ''}
           <span class="account-status-badge ${isEnabled ? 'status-badge-connected' : 'status-badge-disconnected'}">
             ${isEnabled ? 'Habilitado' : 'Deshabilitado'}
           </span>
         </div>
       </div>
+      ${!isCompatible ? `<div class="account-status-message account-status-message-error">Incompatible: ${escapeHTML(p.incompatibility_reason || 'Versión de SDK no compatible')}</div>` : ''}
     `;
 
     const actionsDiv = document.createElement('div');
     actionsDiv.style.marginTop = '12px';
     actionsDiv.style.display = 'flex';
     actionsDiv.style.gap = '8px';
+    actionsDiv.style.flexWrap = 'wrap';
 
     if (!isInstalled) {
       const btnInstall = document.createElement('button');
       btnInstall.className = 'btn-card btn-primary btn-install-plugin';
       btnInstall.innerHTML = '<i class="fa-solid fa-download"></i> Instalar';
+      btnInstall.disabled = !isCompatible;
+      if (!isCompatible) {
+        btnInstall.title = p.incompatibility_reason || 'Plugin incompatible';
+      }
       btnInstall.addEventListener('click', async () => {
         try {
-          await window.conduitAPI.installPlugin(p.id);
+          const res = await window.conduitAPI.installPlugin(p.id);
+          if (res && res.success === false) {
+            showPluginsFeedback(res.message || 'Error al instalar plugin', true);
+          } else {
+            showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} instalado.`);
+          }
           await loadPlugins();
         } catch (e) {
           alert('Error al instalar plugin: ' + e.message);
@@ -2818,10 +2898,274 @@ function renderPlugins() {
         }
       });
       actionsDiv.appendChild(btnToggle);
+
+      if (p.update_available) {
+        const btnUpdate = document.createElement('button');
+        btnUpdate.className = 'btn-card btn-primary btn-update-plugin';
+        btnUpdate.innerHTML = `<i class="fa-solid fa-arrow-up"></i> Actualizar${p.latest_version ? ` (v${escapeHTML(p.latest_version)})` : ''}`;
+        btnUpdate.disabled = isExternal || !isCompatible;
+        if (isExternal) {
+          btnUpdate.title = 'Este plugin está gestionado externamente y no puede actualizarse desde la GUI.';
+        } else if (!isCompatible) {
+          btnUpdate.title = p.incompatibility_reason || 'Plugin incompatible';
+        }
+        btnUpdate.addEventListener('click', async () => {
+          try {
+            const res = await window.conduitAPI.updatePlugin(p.id, false);
+            if (res && res.success === false) {
+              showPluginsFeedback(res.message || 'Error al actualizar plugin', true);
+            } else {
+              showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} actualizado.`);
+            }
+            await loadPlugins();
+          } catch (e) {
+            alert('Error al actualizar plugin: ' + e.message);
+          }
+        });
+        actionsDiv.appendChild(btnUpdate);
+      }
+
+      const btnUninstall = document.createElement('button');
+      btnUninstall.className = 'btn-card btn-danger btn-uninstall-plugin';
+      btnUninstall.innerHTML = '<i class="fa-solid fa-trash"></i> Desinstalar';
+      btnUninstall.disabled = isExternal;
+      if (isExternal) {
+        btnUninstall.title = 'Este plugin está gestionado externamente y no puede desinstalarse desde la GUI.';
+      }
+      btnUninstall.addEventListener('click', () => {
+        const existingConfirm = Array.from(div.children || []).find(c => c.classList && c.classList.contains('uninstall-confirm'));
+        if (existingConfirm) return;
+        const confirmBox = document.createElement('div');
+        confirmBox.className = 'uninstall-confirm';
+        const promptText = document.createElement('span');
+        promptText.textContent = `¿Desinstalar ${p.name || p.id}?`;
+        const btnGroup = document.createElement('div');
+        btnGroup.style.display = 'flex';
+        btnGroup.style.gap = '6px';
+
+        const btnConfirm = document.createElement('button');
+        btnConfirm.className = 'btn-card btn-danger btn-confirm-uninstall';
+        btnConfirm.textContent = 'Confirmar';
+        btnConfirm.addEventListener('click', async () => {
+          try {
+            const res = await window.conduitAPI.uninstallPlugin(p.id);
+            if (res && res.success === false) {
+              showPluginsFeedback(res.message || 'Error al desinstalar plugin', true);
+            } else {
+              showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} desinstalado.`);
+            }
+            await loadPlugins();
+          } catch (e) {
+            alert('Error al desinstalar plugin: ' + e.message);
+          }
+        });
+
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'btn-card btn-secondary btn-cancel-uninstall';
+        btnCancel.textContent = 'Cancelar';
+        btnCancel.addEventListener('click', () => {
+          confirmBox.remove();
+        });
+
+        btnGroup.appendChild(btnConfirm);
+        btnGroup.appendChild(btnCancel);
+        confirmBox.appendChild(promptText);
+        confirmBox.appendChild(btnGroup);
+        div.appendChild(confirmBox);
+      });
+      actionsDiv.appendChild(btnUninstall);
     }
 
     div.appendChild(actionsDiv);
     el.pluginsList.appendChild(div);
+  });
+}
+
+async function loadAboutInfo() {
+  try {
+    let appInfo = state.appInfo || null;
+    if (window.conduitAPI.getAppInfo) {
+      appInfo = await window.conduitAPI.getAppInfo();
+      state.appInfo = appInfo;
+    }
+
+    let status = state.daemonStatus || null;
+    if (!status && window.conduitAPI.getStatus) {
+      status = await window.conduitAPI.getStatus();
+      state.daemonStatus = status;
+    }
+
+    if (el.aboutGuiVersion) {
+      el.aboutGuiVersion.textContent = appInfo && appInfo.version ? `v${appInfo.version}` : '-';
+    }
+    if (el.aboutCoreVersion) {
+      el.aboutCoreVersion.textContent = status && status.core_version ? `v${status.core_version}` : '-';
+    }
+    if (el.aboutSdkProtocol) {
+      el.aboutSdkProtocol.textContent = status && status.protocol_version ? `SDK Protocol v${status.protocol_version}` : 'SDK Protocol v-';
+    }
+    if (el.aboutTuiVersion) {
+      el.aboutTuiVersion.textContent = status && status.tui_version ? `v${status.tui_version}` : 'Not installed';
+    }
+    if (el.aboutPackaging) {
+      if (appInfo && (appInfo.packagingMode || appInfo.platform)) {
+        const pkg = [appInfo.platform, appInfo.packagingMode].filter(Boolean).join(' / ');
+        el.aboutPackaging.textContent = pkg || '-';
+      } else {
+        el.aboutPackaging.textContent = '-';
+      }
+    }
+    if (el.aboutCheckedAt) {
+      el.aboutCheckedAt.textContent = state.lastUpdateCheckAt
+        ? `Última comprobación: ${state.lastUpdateCheckAt}`
+        : '';
+    }
+
+    if (el.aboutPluginsTbody) {
+      const installed = (state.plugins || []).filter(p => p.is_installed !== false);
+      if (installed.length === 0) {
+        el.aboutPluginsTbody.innerHTML = '<tr><td colspan="6" class="text-muted">Sin plugins instalados</td></tr>';
+      } else {
+        el.aboutPluginsTbody.innerHTML = installed.map(p => {
+          const isEnabled = p.is_enabled !== undefined ? p.is_enabled : Boolean(p.enabled);
+          const ver = (p.manifest && p.manifest.version) || p.version || '-';
+          const latestVer = p.latest_version ? `v${escapeHTML(p.latest_version)}` : '-';
+          const sourceLabel = p.is_third_party ? 'Third-Party' : 'Official';
+          const isCompatible = p.compatible !== false;
+          const compatLabel = isCompatible
+            ? 'Compatible'
+            : `Incompatible${p.incompatibility_reason ? `: ${escapeHTML(p.incompatibility_reason)}` : ''}`;
+          return `<tr>
+            <td>${escapeHTML(p.name || p.id)}</td>
+            <td><span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">${sourceLabel}</span></td>
+            <td>v${escapeHTML(ver)}</td>
+            <td>${latestVer}</td>
+            <td>${compatLabel}</td>
+            <td>${isEnabled ? 'Habilitado' : 'Deshabilitado'}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+  } catch (err) {
+    console.error('Error loadAboutInfo:', err);
+  }
+}
+
+function setAboutUpdateBanner(html, visible = true) {
+  if (!el.aboutUpdateStatus) return;
+  el.aboutUpdateStatus.innerHTML = html;
+  el.aboutUpdateStatus.classList.toggle('hidden', !visible);
+}
+
+async function checkForUpdates(forceRefresh = true, { background = false } = {}) {
+  try {
+    if (!background) {
+      if (el.btnCheckUpdates) el.btnCheckUpdates.disabled = true;
+      setAboutUpdateBanner('<span>Buscando actualizaciones...</span>', true);
+    }
+
+    const appInfo = state.appInfo || (window.conduitAPI.getAppInfo ? await window.conduitAPI.getAppInfo() : null);
+    state.appInfo = appInfo;
+
+    const updatesRes = window.conduitAPI.checkUpdates
+      ? await window.conduitAPI.checkUpdates(forceRefresh, appInfo && appInfo.version)
+      : null;
+    if (updatesRes) {
+      state.lastUpdateCheckAt = updatesRes.checked_at || new Date().toISOString();
+    }
+    if (updatesRes && Array.isArray(updatesRes.plugins)) {
+      state.plugins = updatesRes.plugins;
+      updatePluginsBadge();
+      renderPlugins();
+    }
+    await loadAboutInfo();
+
+    const parts = [];
+    if (!background && appInfo && appInfo.selfUpdateSupported && window.conduitAPI.checkAppUpdate) {
+      const appCheck = await window.conduitAPI.checkAppUpdate();
+      if (appCheck && appCheck.updateAvailable && appCheck.updateInfo && appCheck.updateInfo.version) {
+        parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(appCheck.updateInfo.version)}</strong></span>`);
+        parts.push('<button type="button" class="btn-card btn-primary" id="btn-download-app-update">Descargar actualización</button>');
+      } else if (appCheck && appCheck.error) {
+        parts.push(`<span>Error buscando actualización de GUI: ${escapeHTML(appCheck.error)}</span>`);
+      } else {
+        parts.push('<span>GUI actualizada.</span>');
+      }
+    } else if (updatesRes && updatesRes.gui_update_available && updatesRes.gui_latest_version && updatesRes.gui_release_url) {
+      parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(updatesRes.gui_latest_version)}</strong></span>`);
+      parts.push('<button type="button" class="btn-card btn-primary" id="btn-open-gui-release">Ver release en GitHub</button>');
+    } else if (!background) {
+      parts.push('<span>GUI actualizada.</span>');
+    }
+
+    if (updatesRes && updatesRes.core_update_available && updatesRes.core_latest_version) {
+      parts.push(`<span>Core v${escapeHTML(updatesRes.core_latest_version)} disponible.</span>`);
+    }
+
+    if (parts.length > 0) {
+      setAboutUpdateBanner(parts.join(' '), true);
+    }
+
+    const btnDownload = document.getElementById('btn-download-app-update');
+    if (btnDownload && window.conduitAPI.downloadAppUpdate) {
+      btnDownload.onclick = async () => {
+        btnDownload.disabled = true;
+        await window.conduitAPI.downloadAppUpdate();
+      };
+    }
+
+    const btnOpenRelease = document.getElementById('btn-open-gui-release');
+    if (btnOpenRelease && updatesRes && updatesRes.gui_release_url && window.conduitAPI.openExternal) {
+      btnOpenRelease.onclick = () => {
+        window.conduitAPI.openExternal(updatesRes.gui_release_url);
+      };
+    }
+  } catch (err) {
+    if (!background) {
+      setAboutUpdateBanner(`<span>Error al buscar actualizaciones: ${escapeHTML(err.message)}</span>`, true);
+    }
+  } finally {
+    if (!background && el.btnCheckUpdates) el.btnCheckUpdates.disabled = false;
+  }
+}
+
+function setupAppUpdateEvents() {
+  if (!window.conduitAPI || !window.conduitAPI.onAppUpdateEvent) return;
+  window.conduitAPI.onAppUpdateEvent((evt) => {
+    if (!evt || !evt.type) return;
+    if (evt.type === 'update-available') {
+      const ver = evt.version ? `v${escapeHTML(evt.version)}` : '';
+      setAboutUpdateBanner(
+        `<span>Nueva versión de GUI disponible: <strong>${ver}</strong></span> <button type="button" class="btn-card btn-primary" id="btn-download-app-update">Descargar actualización</button>`,
+        true
+      );
+      const btnDownload = document.getElementById('btn-download-app-update');
+      if (btnDownload && window.conduitAPI.downloadAppUpdate) {
+        btnDownload.onclick = async () => {
+          btnDownload.disabled = true;
+          await window.conduitAPI.downloadAppUpdate();
+        };
+      }
+    } else if (evt.type === 'download-progress' || evt.type === 'downloading') {
+      const rawPct = typeof evt.percent === 'number'
+        ? evt.percent
+        : (evt.progress && typeof evt.progress.percent === 'number' ? evt.progress.percent : 0);
+      const pct = Math.round(rawPct);
+      setAboutUpdateBanner(`<span>Descargando actualización: ${pct}%</span>`, true);
+    } else if (evt.type === 'update-downloaded' || evt.type === 'downloaded') {
+      setAboutUpdateBanner(
+        '<span>Actualización descargada y lista.</span> <button type="button" class="btn-card btn-primary" id="btn-install-app-update">Reiniciar para actualizar</button>',
+        true
+      );
+      const btnInstall = document.getElementById('btn-install-app-update');
+      if (btnInstall && window.conduitAPI.installAppUpdate) {
+        btnInstall.addEventListener('click', () => {
+          window.conduitAPI.installAppUpdate();
+        });
+      }
+    } else if (evt.type === 'update-error' || evt.type === 'error') {
+      setAboutUpdateBanner(`<span>Error de actualización: ${escapeHTML(evt.message || 'desconocido')}</span>`, true);
+    }
   });
 }
 
@@ -4143,16 +4487,93 @@ function setupEventListeners() {
     });
   }
 
-  el.btnPlugins.addEventListener('click', () => {
+  el.btnPlugins.addEventListener('click', async () => {
     setActiveSidebarPill(el.btnPlugins);
     showView('view-plugins');
+    if (window.conduitAPI && window.conduitAPI.markPluginsSeen) {
+      try {
+        await window.conduitAPI.markPluginsSeen();
+        (state.plugins || []).forEach(p => { p.is_new = false; });
+        updatePluginsBadge();
+        renderPlugins();
+      } catch (err) {
+        console.error('Error markPluginsSeen:', err);
+      }
+    }
   });
+
+  if (el.btnInstallCustomPlugin) {
+    el.btnInstallCustomPlugin.addEventListener('click', async () => {
+      const repo = el.pluginCustomRepoInput ? el.pluginCustomRepoInput.value.trim() : '';
+      if (!repo) return;
+      el.btnInstallCustomPlugin.disabled = true;
+      try {
+        const res = await window.conduitAPI.installPlugin(repo);
+        if (res && res.success === false) {
+          showPluginsFeedback(res.message || 'Error al instalar plugin', true);
+        } else {
+          showPluginsFeedback(res && res.message ? res.message : `Plugin ${repo} instalado.`);
+          if (el.pluginCustomRepoInput) el.pluginCustomRepoInput.value = '';
+        }
+        await loadPlugins();
+      } catch (e) {
+        showPluginsFeedback('Error al instalar plugin: ' + e.message, true);
+      } finally {
+        el.btnInstallCustomPlugin.disabled = false;
+      }
+    });
+  }
+
+  if (el.btnUpdateAllPlugins) {
+    el.btnUpdateAllPlugins.addEventListener('click', async () => {
+      el.btnUpdateAllPlugins.disabled = true;
+      try {
+        const res = await window.conduitAPI.updatePlugin('', true);
+        if (res && res.success === false) {
+          showPluginsFeedback(res.message || 'Error al actualizar plugins', true);
+        } else {
+          showPluginsFeedback(res && res.message ? res.message : 'Plugins actualizados.');
+        }
+        await loadPlugins();
+      } catch (e) {
+        showPluginsFeedback('Error al actualizar plugins: ' + e.message, true);
+      } finally {
+        updatePluginsBadge();
+      }
+    });
+  }
+
+  if (el.btnCheckPluginUpdates) {
+    el.btnCheckPluginUpdates.addEventListener('click', async () => {
+      el.btnCheckPluginUpdates.disabled = true;
+      try {
+        const res = await window.conduitAPI.checkUpdates(true);
+        if (res && Array.isArray(res.plugins)) {
+          state.plugins = res.plugins;
+          updatePluginsBadge();
+          renderPlugins();
+        }
+        showPluginsFeedback('Catálogo de plugins verificado.');
+      } catch (e) {
+        showPluginsFeedback('Error al verificar actualizaciones: ' + e.message, true);
+      } finally {
+        el.btnCheckPluginUpdates.disabled = false;
+      }
+    });
+  }
 
   el.btnSettings.addEventListener('click', () => {
     setActiveSidebarPill(el.btnSettings);
     loadSettings();
+    loadAboutInfo();
     showView('view-settings');
   });
+
+  if (el.btnCheckUpdates) {
+    el.btnCheckUpdates.addEventListener('click', () => {
+      checkForUpdates(true);
+    });
+  }
 
   const btnSaveSettings = document.getElementById('btn-save-settings');
   if (btnSaveSettings) {

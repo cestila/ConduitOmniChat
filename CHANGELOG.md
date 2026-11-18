@@ -14,6 +14,23 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+### Added
+
+- Build-time version injection (`core/pkg/buildinfo`), `conduitd version`, and `GetStatusResponse` version/protocol reporting (`core_version`, `protocol_version`, `tui_version`).
+- Remote plugin and application registry (`registry.json`), local manifest tracking (`plugins-manifest.json`), compatibility/dependency checks, and third-party `owner/conduit-plugin-<id>` installation.
+- Plugin lifecycle updates and removal: `conduitd plugin check`, `conduitd plugin update [<id>|--all]`, `conduitd plugin remove <id>`, SHA-256 verified hot-updates with best-effort account reconnection, and externally managed plugin guards.
+- Desktop app (`gui`) plugin updates and uninstall UI, dependency/compatibility warnings, custom plugin repository installer, guarded `electron-updater` auto-updates (falling back to release links on portable, `tar.gz`, and Nix packages), and an About view in Settings.
+- CI workflow (`.github/workflows/update-registry.yml`) to keep `registry.json` synced with the latest Core, GUI, and official plugin releases.
+
+### Fixed
+
+- Desktop app daemon status indicator now reads `core_version` from `GetStatusResponse` instead of referencing an undefined `status.version` field.
+- `checkAppUpdate` IPC handler now consistently returns an `updateAvailable` boolean alongside update details.
+
+### SDK
+
+- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, and `MarkPluginsSeen` RPCs and extended `PluginInfo` and `GetStatusResponse` in `sdk/proto/conduit.proto` (`sdk/conduitv1`).
+
 ## [0.1.2] - 2026-11-17
 
 ### Added
