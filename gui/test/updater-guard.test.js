@@ -118,7 +118,7 @@ async function runRpcClientTests() {
   await fakeClient.uninstallPlugin('whatsapp');
   await fakeClient.updatePlugin('whatsapp', false);
   await fakeClient.updatePlugin('', true);
-  await fakeClient.checkUpdates(true);
+  await fakeClient.checkUpdates(true, '0.1.1');
   await fakeClient.markPluginsSeen(['telegram', 'discord']);
   await fakeClient.markPluginsSeen();
 
@@ -128,7 +128,7 @@ async function runRpcClientTests() {
     ['UninstallPlugin', { plugin_id: 'whatsapp' }],
     ['UpdatePlugin', { plugin_id: 'whatsapp', all: false }],
     ['UpdatePlugin', { plugin_id: '', all: true }],
-    ['CheckUpdates', { force_refresh: true }],
+    ['CheckUpdates', { force_refresh: true, gui_version: '0.1.1' }],
     ['MarkPluginsSeen', { plugin_ids: ['telegram', 'discord'] }],
     ['MarkPluginsSeen', { plugin_ids: [] }]
   ]);

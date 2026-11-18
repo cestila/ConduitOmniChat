@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   installPlugin: (pluginId, version) => ipcRenderer.invoke('conduit:installPlugin', pluginId, version),
   uninstallPlugin: (pluginId) => ipcRenderer.invoke('conduit:uninstallPlugin', pluginId),
   updatePlugin: (pluginId, all) => ipcRenderer.invoke('conduit:updatePlugin', pluginId, all),
-  checkUpdates: (forceRefresh) => ipcRenderer.invoke('conduit:checkUpdates', forceRefresh),
+  checkUpdates: (forceRefresh, guiVersion) => ipcRenderer.invoke('conduit:checkUpdates', forceRefresh, guiVersion),
   markPluginsSeen: (pluginIds) => ipcRenderer.invoke('conduit:markPluginsSeen', pluginIds),
   togglePlugin: (pluginId, enabled) => ipcRenderer.invoke('conduit:togglePlugin', pluginId, enabled),
   listContacts: () => ipcRenderer.invoke('conduit:listContacts'),

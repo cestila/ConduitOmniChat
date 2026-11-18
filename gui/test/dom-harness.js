@@ -175,6 +175,7 @@ function createHarness(fixtures = {}) {
   } = fixtures;
 
   const calls = { merge: [], identity: [], alerts: [], sendMessage: [], sendReaction: [], sendVote: [], clickButton: [], editMessage: [], deleteMessage: [], pinMessage: [], getPinnedMessages: [], installPlugin: [], uninstallPlugin: [], updatePlugin: [], togglePlugin: [], checkUpdates: [], markPluginsSeen: [], getAppInfo: [], checkAppUpdate: [], downloadAppUpdate: [], installAppUpdate: [], saveTemp: [], pickFiles: [], downloadAttachment: [], saveAttachmentAs: [], openExternal: [], openPath: [] };
+  const appUpdateListeners = [];
 
   const registry = new Map();
   const docListeners = {};
@@ -363,8 +364,8 @@ function createHarness(fixtures = {}) {
         calls.togglePlugin.push([pluginId, enabled]);
         return { success: true };
       },
-      checkUpdates: async (forceRefresh) => {
-        calls.checkUpdates.push([forceRefresh]);
+      checkUpdates: async (forceRefresh, guiVersion) => {
+        calls.checkUpdates.push([forceRefresh, guiVersion]);
         return fixtures.updatesResponse || {
           registry_reachable: true,
           core_latest_version: '',
@@ -405,7 +406,11 @@ function createHarness(fixtures = {}) {
         return { supported: false, installed: false };
       },
       onAppUpdateEvent: (cb) => {
-        return () => {};
+        appUpdateListeners.push(cb);
+        return () => {
+          const idx = appUpdateListeners.indexOf(cb);
+          if (idx >= 0) appUpdateListeners.splice(idx, 1);
+        };
       },
       openPath: async (filePath) => {
         calls.openPath.push(filePath);
@@ -532,6 +537,9 @@ function createHarness(fixtures = {}) {
     fireDocumentEvent: (name, extra = {}) => (docListeners[name] || []).forEach(fn => fn({ type: name, preventDefault() {}, stopPropagation() {}, ...extra })),
     emitEvent: (envelope) => {
       eventListeners.forEach(fn => fn(envelope));
+    },
+    emitAppUpdateEvent: (evt) => {
+      appUpdateListeners.forEach(fn => fn(evt));
     }
   };
   exports.forEach(name => { api[name] = sandbox[`__${name}`]; });

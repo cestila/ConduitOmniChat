@@ -5206,6 +5206,7 @@ func (x *UpdatePluginResponse) GetResults() []*PluginUpdateResult {
 type CheckUpdatesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ForceRefresh  bool                   `protobuf:"varint,1,opt,name=force_refresh,json=forceRefresh,proto3" json:"force_refresh,omitempty"`
+	GuiVersion    string                 `protobuf:"bytes,2,opt,name=gui_version,json=guiVersion,proto3" json:"gui_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5245,6 +5246,13 @@ func (x *CheckUpdatesRequest) GetForceRefresh() bool {
 		return x.ForceRefresh
 	}
 	return false
+}
+
+func (x *CheckUpdatesRequest) GetGuiVersion() string {
+	if x != nil {
+		return x.GuiVersion
+	}
+	return ""
 }
 
 type CheckUpdatesResponse struct {
@@ -8043,9 +8051,11 @@ const file_conduit_proto_rawDesc = "" +
 	"\x14UpdatePluginResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x128\n" +
-	"\aresults\x18\x03 \x03(\v2\x1e.conduit.v1.PluginUpdateResultR\aresults\":\n" +
+	"\aresults\x18\x03 \x03(\v2\x1e.conduit.v1.PluginUpdateResultR\aresults\"[\n" +
 	"\x13CheckUpdatesRequest\x12#\n" +
-	"\rforce_refresh\x18\x01 \x01(\bR\fforceRefresh\"\x95\x04\n" +
+	"\rforce_refresh\x18\x01 \x01(\bR\fforceRefresh\x12\x1f\n" +
+	"\vgui_version\x18\x02 \x01(\tR\n" +
+	"guiVersion\"\x95\x04\n" +
 	"\x14CheckUpdatesResponse\x12-\n" +
 	"\x12registry_reachable\x18\x01 \x01(\bR\x11registryReachable\x12.\n" +
 	"\x13core_latest_version\x18\x02 \x01(\tR\x11coreLatestVersion\x12(\n" +

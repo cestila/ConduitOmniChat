@@ -2989,21 +2989,6 @@ function renderPlugins() {
   });
 }
 
-// Simple numeric semver comparison (returns 1 if a > b, -1 if a < b, 0 if equal).
-function compareSemver(a, b) {
-  const parse = (v) => String(v || '').replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0);
-  const pa = parse(a);
-  const pb = parse(b);
-  const len = Math.max(pa.length, pb.length, 3);
-  for (let i = 0; i < len; i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
-  return 0;
-}
-
 async function loadAboutInfo() {
   try {
     let appInfo = state.appInfo || null;
@@ -3066,7 +3051,9 @@ async function checkForUpdates(forceRefresh = true) {
     const appInfo = state.appInfo || (window.conduitAPI.getAppInfo ? await window.conduitAPI.getAppInfo() : null);
     state.appInfo = appInfo;
 
-    const updatesRes = window.conduitAPI.checkUpdates ? await window.conduitAPI.checkUpdates(forceRefresh) : null;
+    const updatesRes = window.conduitAPI.checkUpdates
+      ? await window.conduitAPI.checkUpdates(forceRefresh, appInfo && appInfo.version)
+      : null;
     if (updatesRes && Array.isArray(updatesRes.plugins)) {
       state.plugins = updatesRes.plugins;
       updatePluginsBadge();
@@ -3084,14 +3071,9 @@ async function checkForUpdates(forceRefresh = true) {
       } else {
         parts.push('<span>GUI actualizada.</span>');
       }
-    } else if (updatesRes && updatesRes.gui_latest_version && appInfo && appInfo.version) {
-      const isNewer = compareSemver(updatesRes.gui_latest_version, appInfo.version) > 0;
-      if (isNewer && updatesRes.gui_release_url) {
-        parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(updatesRes.gui_latest_version)}</strong></span>`);
-        parts.push('<button type="button" class="btn-card btn-primary" id="btn-open-gui-release">Ver release en GitHub</button>');
-      } else {
-        parts.push('<span>GUI actualizada.</span>');
-      }
+    } else if (updatesRes && updatesRes.gui_update_available && updatesRes.gui_latest_version && updatesRes.gui_release_url) {
+      parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(updatesRes.gui_latest_version)}</strong></span>`);
+      parts.push('<button type="button" class="btn-card btn-primary" id="btn-open-gui-release">Ver release en GitHub</button>');
     } else {
       parts.push('<span>GUI actualizada.</span>');
     }
@@ -3127,10 +3109,13 @@ function setupAppUpdateEvents() {
   if (!window.conduitAPI || !window.conduitAPI.onAppUpdateEvent) return;
   window.conduitAPI.onAppUpdateEvent((evt) => {
     if (!evt || !evt.type) return;
-    if (evt.type === 'downloading') {
-      const pct = evt.progress && typeof evt.progress.percent === 'number' ? Math.round(evt.progress.percent) : 0;
+    if (evt.type === 'download-progress' || evt.type === 'downloading') {
+      const rawPct = typeof evt.percent === 'number'
+        ? evt.percent
+        : (evt.progress && typeof evt.progress.percent === 'number' ? evt.progress.percent : 0);
+      const pct = Math.round(rawPct);
       setAboutUpdateBanner(`<span>Descargando actualización: ${pct}%</span>`, true);
-    } else if (evt.type === 'downloaded') {
+    } else if (evt.type === 'update-downloaded' || evt.type === 'downloaded') {
       setAboutUpdateBanner(
         '<span>Actualización descargada y lista.</span> <button type="button" class="btn-card btn-primary" id="btn-install-app-update">Reiniciar para actualizar</button>',
         true
@@ -3141,7 +3126,7 @@ function setupAppUpdateEvents() {
           window.conduitAPI.installAppUpdate();
         });
       }
-    } else if (evt.type === 'error') {
+    } else if (evt.type === 'update-error' || evt.type === 'error') {
       setAboutUpdateBanner(`<span>Error de actualización: ${escapeHTML(evt.message || 'desconocido')}</span>`, true);
     }
   });

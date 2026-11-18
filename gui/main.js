@@ -443,9 +443,10 @@ function setupIpcHandlers() {
     return await rpcClient.updatePlugin(pluginId, all);
   });
 
-  ipcMain.handle('conduit:checkUpdates', async (_e, forceRefresh) => {
+  ipcMain.handle('conduit:checkUpdates', async (_e, forceRefresh, guiVersion) => {
     if (!rpcClient) throw new Error('RPC client not initialized');
-    return await rpcClient.checkUpdates(forceRefresh);
+    const resolvedGuiVersion = guiVersion || app.getVersion();
+    return await rpcClient.checkUpdates(forceRefresh, resolvedGuiVersion);
   });
 
   ipcMain.handle('conduit:markPluginsSeen', async (_e, pluginIds) => {

@@ -272,10 +272,11 @@ class ConduitRpcClient {
     });
   }
 
-  checkUpdates(forceRefresh = false) {
+  checkUpdates(forceRefresh = false, guiVersion = '') {
     return new Promise((resolve, reject) => {
       this.client.CheckUpdates({
-        force_refresh: Boolean(forceRefresh)
+        force_refresh: Boolean(forceRefresh),
+        gui_version: guiVersion ? String(guiVersion) : ''
       }, (err, response) => {
         if (err) return reject(err);
         resolve(response);

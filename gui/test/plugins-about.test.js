@@ -182,7 +182,7 @@ const pluginsFixture = [
     aboutPluginsTbody.innerHTML
   );
 
-  // 5. About view with TUI installed + selfUpdateSupported=false version comparison
+  // 5. About view with TUI installed + selfUpdateSupported=false when gui_update_available is false
   const appWithTui = createHarness({
     status: { core_version: '0.9.5', protocol_version: 2, tui_version: '0.4.0' },
     plugins: pluginsFixture,
@@ -191,7 +191,7 @@ const pluginsFixture = [
       registry_reachable: true,
       gui_latest_version: '0.1.1',
       gui_release_url: 'https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.1',
-      gui_update_available: true, // stale/false flag from conduitd comparing against tuiVersion
+      gui_update_available: false,
       core_update_available: false,
       plugins: pluginsFixture,
     },
@@ -207,9 +207,101 @@ const pluginsFixture = [
   await appWithTui.checkForUpdates();
   const updateStatusEl = appWithTui.documentStub.getElementById('about-update-status');
   check(
-    'does not show false GUI update when gui_latest_version === appInfo.version',
+    'checkForUpdates forwards guiVersion to conduitAPI.checkUpdates',
+    appWithTui.calls.checkUpdates.some(c => c[0] === true && c[1] === '0.1.1'),
+    JSON.stringify(appWithTui.calls.checkUpdates)
+  );
+  check(
+    'does not show GUI update when gui_update_available is false',
     !updateStatusEl.innerHTML.includes('btn-open-gui-release'),
     updateStatusEl.innerHTML
+  );
+
+  // 6. selfUpdateSupported=false with gui_update_available=true shows release link CTA and opens external URL
+  const releaseUrl = 'https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.2';
+  const appFallbackUpdate = createHarness({
+    status: { core_version: '0.9.5', protocol_version: 2, tui_version: '' },
+    plugins: pluginsFixture,
+    appInfo: { version: '0.1.1', platform: 'linux', packagingMode: 'archive', selfUpdateSupported: false },
+    updatesResponse: {
+      registry_reachable: true,
+      gui_latest_version: '0.1.2',
+      gui_release_url: releaseUrl,
+      gui_update_available: true,
+      core_update_available: false,
+      plugins: pluginsFixture,
+    },
+  });
+  await appFallbackUpdate.start();
+  await appFallbackUpdate.checkForUpdates();
+  const fallbackStatusEl = appFallbackUpdate.documentStub.getElementById('about-update-status');
+  const openReleaseBtn = appFallbackUpdate.documentStub.getElementById('btn-open-gui-release');
+  check(
+    'shows release-link CTA when selfUpdateSupported=false and gui_update_available=true',
+    fallbackStatusEl.innerHTML.includes('btn-open-gui-release') && fallbackStatusEl.innerHTML.includes('v0.1.2'),
+    fallbackStatusEl.innerHTML
+  );
+  openReleaseBtn.click();
+  check(
+    'clicking release-link CTA calls openExternal with gui_release_url',
+    appFallbackUpdate.calls.openExternal.length === 1 && appFallbackUpdate.calls.openExternal[0] === releaseUrl,
+    JSON.stringify(appFallbackUpdate.calls.openExternal)
+  );
+
+  // 7. selfUpdateSupported=true positive flow: checkAppUpdate -> download -> update-downloaded -> install
+  const appSelfUpdate = createHarness({
+    status: { core_version: '0.9.5', protocol_version: 2, tui_version: '' },
+    plugins: pluginsFixture,
+    appInfo: { version: '0.1.1', platform: 'linux', packagingMode: 'appimage', selfUpdateSupported: true },
+    appUpdateCheck: {
+      supported: true,
+      packagingMode: 'appimage',
+      updateAvailable: true,
+      updateInfo: { version: '0.2.0' },
+    },
+    updatesResponse: {
+      registry_reachable: true,
+      gui_latest_version: '0.2.0',
+      gui_release_url: 'https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.0',
+      gui_update_available: true,
+      core_update_available: false,
+      plugins: pluginsFixture,
+    },
+  });
+  await appSelfUpdate.start();
+  await appSelfUpdate.checkForUpdates();
+
+  check(
+    'selfUpdateSupported=true invokes checkAppUpdate',
+    appSelfUpdate.calls.checkAppUpdate.length === 1,
+    `calls=${appSelfUpdate.calls.checkAppUpdate.length}`
+  );
+  const selfStatusEl = appSelfUpdate.documentStub.getElementById('about-update-status');
+  const downloadBtn = appSelfUpdate.documentStub.getElementById('btn-download-app-update');
+  check(
+    'selfUpdateSupported=true renders download button when updateAvailable',
+    selfStatusEl.innerHTML.includes('btn-download-app-update') && selfStatusEl.innerHTML.includes('v0.2.0'),
+    selfStatusEl.innerHTML
+  );
+  await downloadBtn.click();
+  check(
+    'clicking #btn-download-app-update calls downloadAppUpdate()',
+    appSelfUpdate.calls.downloadAppUpdate.length === 1,
+    `calls=${appSelfUpdate.calls.downloadAppUpdate.length}`
+  );
+
+  appSelfUpdate.emitAppUpdateEvent({ type: 'update-downloaded', version: '0.2.0' });
+  const installBtn = appSelfUpdate.documentStub.getElementById('btn-install-app-update');
+  check(
+    'update-downloaded event renders #btn-install-app-update',
+    selfStatusEl.innerHTML.includes('btn-install-app-update'),
+    selfStatusEl.innerHTML
+  );
+  installBtn.click();
+  check(
+    'clicking #btn-install-app-update calls installAppUpdate()',
+    appSelfUpdate.calls.installAppUpdate.length === 1,
+    `calls=${appSelfUpdate.calls.installAppUpdate.length}`
   );
 
   finish();

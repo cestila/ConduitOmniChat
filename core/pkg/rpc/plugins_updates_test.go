@@ -474,3 +474,48 @@ func TestGetStatusReturnsBuildAndProtocolAndTUIVersion(t *testing.T) {
 		t.Fatalf("TuiVersion = %q, want v1.2.0", resp.TuiVersion)
 	}
 }
+
+func TestCheckUpdatesGuiVersionComparison(t *testing.T) {
+	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"schema_version": 1,
+			"gui": {"version": "0.1.2", "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.2"},
+			"plugins": []
+		}`))
+	}))
+	defer regSrv.Close()
+
+	srv, _ := newMediaTestServer(t)
+	srv.SetTUIVersion("0.0.1") // Must be ignored for gui_update_available.
+	srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, "", time.Minute))
+	srv.SetManifestStore(pluginmgr.NewManifestStore(filepath.Join(t.TempDir(), "plugins-manifest.json")))
+
+	cases := []struct {
+		name       string
+		guiVersion string
+		wantUpdate bool
+	}{
+		{name: "older gui version", guiVersion: "0.1.1", wantUpdate: true},
+		{name: "equal gui version", guiVersion: "0.1.2", wantUpdate: false},
+		{name: "newer gui version", guiVersion: "0.2.0", wantUpdate: false},
+		{name: "empty gui version", guiVersion: "", wantUpdate: false},
+		{name: "dev gui version", guiVersion: "dev", wantUpdate: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := srv.CheckUpdates(context.Background(), &conduitv1.CheckUpdatesRequest{
+				ForceRefresh: true,
+				GuiVersion:   tc.guiVersion,
+			})
+			if err != nil {
+				t.Fatalf("CheckUpdates error: %v", err)
+			}
+			if resp.GuiUpdateAvailable != tc.wantUpdate {
+				t.Fatalf("GuiUpdateAvailable = %v, want %v (guiVersion=%q, latest=%q)",
+					resp.GuiUpdateAvailable, tc.wantUpdate, tc.guiVersion, resp.GuiLatestVersion)
+			}
+		})
+	}
+}

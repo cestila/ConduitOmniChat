@@ -638,6 +638,7 @@ message UpdatePluginResponse {
 
 message CheckUpdatesRequest {
   bool force_refresh = 1;
+  string gui_version = 2;
 }
 
 message CheckUpdatesResponse {

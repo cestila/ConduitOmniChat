@@ -180,7 +180,7 @@ func (s *Server) CheckUpdates(ctx context.Context, req *conduitv1.CheckUpdatesRe
 	}
 
 	coreUpdate := isNewerVersion(coreRel.Version, buildinfo.Version)
-	guiUpdate := isNewerVersion(guiRel.Version, s.tuiVersion)
+	guiUpdate := isNewerVersion(guiRel.Version, req.GetGuiVersion())
 
 	return &conduitv1.CheckUpdatesResponse{
 		RegistryReachable:     reachable,
