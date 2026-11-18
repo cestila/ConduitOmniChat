@@ -21,23 +21,25 @@ type DB struct {
 
 // NewDB inicializa o abre la base de datos SQLite y ejecuta las migraciones DDL.
 func NewDB(dbPath string) (*DB, error) {
-	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("no se pudo crear el directorio de la base de datos: %w", err)
+	if dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file:") {
+		dir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("no se pudo crear el directorio de la base de datos: %w", err)
+		}
 	}
 
-	conn, err := sql.Open("sqlite", dbPath)
+	dsn := sqliteDSN(dbPath)
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error al abrir base de datos sqlite: %w", err)
 	}
 
-	// modernc.org/sqlite con WAL mode necesita que busy_timeout esté configurado en el DSN
-	// o que la conexión no se bloquee a sí misma en iteraciones sobre rows activas.
-	// Limitar MaxOpenConns a 10 y permitir un busy_timeout generoso evita SQLITE_BUSY.
+	// En modernc.org/sqlite los pragmas por Exec solo aplican a una conexión del pool;
+	// configurarlos en el DSN garantiza busy_timeout y WAL en todas las conexiones.
 	conn.SetMaxOpenConns(10)
 	conn.SetMaxIdleConns(5)
 
-	// Configurar pragmas para concurrencia WAL sin bloqueos
+	// Fallback explícito para :memory: o DSNs especiales
 	_, _ = conn.Exec("PRAGMA journal_mode = WAL;")
 	_, _ = conn.Exec("PRAGMA busy_timeout = 10000;")
 	_, _ = conn.Exec("PRAGMA synchronous = NORMAL;")
@@ -49,6 +51,17 @@ func NewDB(dbPath string) (*DB, error) {
 	}
 
 	return db, nil
+}
+
+func sqliteDSN(dbPath string) string {
+	if dbPath == "" || dbPath == ":memory:" {
+		return dbPath
+	}
+	pragmas := "_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	if strings.Contains(dbPath, "?") {
+		return dbPath + "&" + pragmas
+	}
+	return dbPath + "?" + pragmas
 }
 
 // Close cierra la conexión.

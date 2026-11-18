@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -308,5 +309,37 @@ func TestMigrateContactChannelsBackfillsEmptyAccountID(t *testing.T) {
 	}
 	if ch.AccountID != "acc-tg-uuid" {
 		t.Fatalf("se esperaba account_id='acc-tg-uuid' tras backfill, obtuvo %q", ch.AccountID)
+	}
+}
+
+func TestNewDBConcurrentWritesDoNotHitSQLiteBusy(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "concurrent.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("error abriendo db: %v", err)
+	}
+	defer db.Close()
+
+	const workers = 10
+	const writesPerWorker = 15
+	errCh := make(chan error, workers*writesPerWorker)
+
+	for w := 0; w < workers; w++ {
+		go func(workerID int) {
+			for i := 0; i < writesPerWorker; i++ {
+				id := fmt.Sprintf("c-%d-%d", workerID, i)
+				err := db.SaveContact(context.Background(), &domain.Contact{
+					ID:          id,
+					DisplayName: id,
+				})
+				errCh <- err
+			}
+		}(w)
+	}
+
+	for i := 0; i < workers*writesPerWorker; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("escritura concurrente falló (posible SQLITE_BUSY): %v", err)
+		}
 	}
 }
