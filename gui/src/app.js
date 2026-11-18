@@ -225,8 +225,8 @@ function renderConversations() {
     list = list.filter(c => providerKindOf(c) === state.activeFilter);
   }
 
-  // Comprobar si hubo cambios reales en orden, previews o unread_counts antes de tocar el DOM
-  const currentHash = list.map(c => `${c.id}:${c.last_message_at_unix}:${c.unread_count}:${c.last_message_preview}`).join('|') + `|filter:${state.activeFilter}|srv:${state.activeServerId}|active:${state.activeConversationId}`;
+  // Comprobar si hubo cambios reales en orden, previews, títulos o unread_counts antes de tocar el DOM
+  const currentHash = list.map(c => `${c.id}:${c.title}:${c.contact_phone || ''}:${c.last_message_at_unix}:${c.unread_count}:${c.last_message_preview}`).join('|') + `|filter:${state.activeFilter}|srv:${state.activeServerId}|active:${state.activeConversationId}`;
   if (currentHash === state.lastConversationsHash) {
     return; // Nada ha cambiado, evitamos reescribir el DOM para que no haya micro-congelamientos
   }
@@ -661,6 +661,67 @@ function closeServer() {
   renderConversations();
 }
 
+function isLegibleName(name) {
+  return /[\p{L}\p{N}]/u.test(String(name || ''));
+}
+
+function formatConversationTitle(conv) {
+  if (!conv) return 'Conversación';
+  const raw = (conv.title || '').trim();
+  if (isLegibleName(raw)) return raw;
+  const phone = (conv.contact_phone || '').trim();
+  if (phone) {
+    return raw ? `${raw} (${phone})` : phone;
+  }
+  return raw || 'Conversación';
+}
+
+function renderMessageStatusIcon(status, errorMsg) {
+  const s = String(status || 'sent').toLowerCase();
+  if (s === 'pending') {
+    return `<i class="fa-regular fa-clock msg-status-icon msg-status-pending" data-msg-status="pending" title="Pendiente de envío"></i>`;
+  }
+  if (s === 'sent') {
+    return `<i class="fa-solid fa-check msg-status-icon msg-status-sent" data-msg-status="sent" title="Enviado"></i>`;
+  }
+  if (s === 'delivered') {
+    return `<i class="fa-solid fa-check-double msg-status-icon msg-status-delivered" data-msg-status="delivered" title="Recibido"></i>`;
+  }
+  if (s === 'read') {
+    return `<i class="fa-solid fa-check-double msg-status-icon msg-status-read" data-msg-status="read" title="Leído"></i>`;
+  }
+  if (s === 'failed') {
+    const tip = errorMsg ? `No enviado: ${errorMsg}` : 'No enviado';
+    return `<i class="fa-solid fa-circle-exclamation msg-status-icon msg-status-failed" data-msg-status="failed" title="${escapeHTML(tip)}"></i><span class="msg-status-failed-label">No enviado</span>`;
+  }
+  return `<i class="fa-solid fa-check msg-status-icon msg-status-sent" data-msg-status="sent" title="Enviado"></i>`;
+}
+
+function showConnectionBanner(message) {
+  const banner = document.getElementById('connection-status-banner');
+  const text = document.getElementById('connection-status-text');
+  if (!banner || !text) return;
+  text.textContent = message;
+  banner.classList.remove('hidden');
+}
+
+function hideConnectionBanner() {
+  const banner = document.getElementById('connection-status-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function updateMessageBubbleStatus(msgId, newStatus, errorMsg) {
+  if (!msgId || !el.messagesContainer) return;
+  const row = el.messagesContainer.querySelector(`[data-msg-id="${msgId}"]`);
+  const meta = row && row.querySelector('.msg-meta');
+  if (meta && typeof meta.insertAdjacentHTML === 'function') {
+    meta.querySelectorAll('.msg-status-icon, .msg-status-failed-label').forEach(node => node.remove());
+    meta.insertAdjacentHTML('beforeend', renderMessageStatusIcon(newStatus, errorMsg));
+    return;
+  }
+  scheduleActiveConversationRender();
+}
+
 function renderChannelItem(conv, isSubchannel) {
   const item = document.createElement('div');
   item.className = `conversation-item ${isSubchannel ? 'is-subchannel' : ''} ${conv.id === state.activeConversationId ? 'active' : ''}`;
@@ -678,8 +739,9 @@ function renderChannelItem(conv, isSubchannel) {
   const provStyle = providerBadgeStyleAttr(provInfo);
   const channelPrefix = channelTypePrefix(provInfo.id, conv);
 
+  const displayTitle = formatConversationTitle(conv);
   const fallbackIcon = conv.channel_type === 'voice' ? '🔊' : (conv.channel_type === 'text' ? '#' : '');
-  const avatarContent = getAvatarHTML(conv.avatar_url, conv.title || 'Conversación', fallbackIcon);
+  const avatarContent = getAvatarHTML(conv.avatar_url, displayTitle, fallbackIcon);
 
   item.innerHTML = `
     <div class="conv-avatar">
@@ -688,7 +750,7 @@ function renderChannelItem(conv, isSubchannel) {
     </div>
     <div class="conv-content">
       <div class="conv-header-row">
-        <div class="conv-title">${channelPrefix}${escapeHTML(conv.title || 'Conversación')}</div>
+        <div class="conv-title">${channelPrefix}${escapeHTML(displayTitle)}</div>
         <div class="conv-time">${timeStr}</div>
       </div>
       <div class="conv-preview-row">
@@ -882,10 +944,19 @@ async function selectConversation(convId) {
 
   const conv = state.conversations.find(c => c.id === convId);
   if (conv) {
-    el.activeChatTitle.textContent = conv.title || 'Conversación';
+    const displayTitle = formatConversationTitle(conv);
+    el.activeChatTitle.textContent = displayTitle;
     const fallbackIcon = conv.channel_type === 'voice' ? '🔊' : (conv.channel_type === 'text' ? '#' : '');
-    el.activeChatAvatar.innerHTML = getAvatarHTML(conv.avatar_url, conv.title || 'Conversación', fallbackIcon);
-    el.activeChatSubtitle.textContent = `ID: ${conv.id.substring(0, 8)}... | Activo en conduitd`;
+    el.activeChatAvatar.innerHTML = getAvatarHTML(conv.avatar_url, displayTitle, fallbackIcon);
+    el.activeChatSubtitle.textContent = conv.contact_phone && isLegibleName(conv.title)
+      ? `${conv.contact_phone} | Activo en conduitd`
+      : `ID: ${conv.id.substring(0, 8)}... | Activo en conduitd`;
+    const btnRename = document.getElementById('btn-rename-contact');
+    const renameForm = document.getElementById('rename-contact-form');
+    if (renameForm) renameForm.classList.add('hidden');
+    if (btnRename) {
+      btnRename.classList.toggle('hidden', Boolean(conv.is_group || !conv.contact_id));
+    }
   }
   updateChannelSelector(conv);
 
@@ -1320,7 +1391,7 @@ function appendMessageBubble(msg) {
       <div class="msg-meta">
         <span>${timeStr}</span>
         ${msg.is_edited ? '<span class="msg-edited-badge">(editado)</span>' : ''}
-        ${isOutgoing ? `<i class="fa-solid fa-check-double" style="font-size:10px;"></i>` : ''}
+        ${isOutgoing ? renderMessageStatusIcon(msg.status, msg.error) : ''}
       </div>
       ${reactionsHTML}
     </div>
@@ -2162,6 +2233,9 @@ async function handleSendMessage() {
       }
       appendMessageBubble(sentMsg);
       scrollMessagesToBottom();
+      if (sentMsg.status === 'failed') {
+        showConnectionBanner('No se pudo enviar el mensaje (plugin desconectado o sin respuesta).');
+      }
 
       // Mover inmediatamente la conversación al top de la lista
       const conv = state.conversations.find(c => c.id === state.activeConversationId);
@@ -2969,8 +3043,39 @@ function setupRealtimeEvents() {
   window.conduitAPI.onEvent((envelope) => {
     console.log('Evento gRPC recibido:', envelope);
     if (envelope.channel_status_update) {
+      const statusText = String(envelope.channel_status_update);
       checkDaemonStatus();
       loadAccounts();
+      if (statusText.includes(':disconnected') || statusText.includes(':auth_error')) {
+        const parts = statusText.split(':');
+        const prov = parts[0] || 'Canal';
+        const reason = parts.slice(2).join(':').trim();
+        showConnectionBanner(reason ? `${prov} desconectado: ${reason}` : `${prov} desconectado. Revisá la cuenta.`);
+      } else if (statusText.endsWith(':connected')) {
+        hideConnectionBanner();
+      }
+      return;
+    }
+    if (envelope.message_status_updated) {
+      const st = envelope.message_status_updated;
+      if (state.messageCache && state.messageCache.has(st.conversation_id)) {
+        const cached = state.messageCache.get(st.conversation_id);
+        if (cached && cached.messages) {
+          const target = cached.messages.find(m => m.id === st.message_id || (st.remote_message_id && m.remote_message_id === st.remote_message_id));
+          if (target) {
+            target.status = st.status;
+            if (st.remote_message_id) target.remote_message_id = st.remote_message_id;
+            if (st.error) target.error = st.error;
+          }
+        }
+      }
+      if (st.conversation_id === state.activeConversationId) {
+        updateMessageBubbleStatus(st.message_id, st.status, st.error);
+      }
+      if (st.status === 'failed') {
+        showConnectionBanner(st.error ? `No se pudo enviar el mensaje: ${st.error}` : 'No se pudo enviar el mensaje.');
+      }
+      return;
     }
     if (envelope.message_deleted) {
       removeMessageFromDOM(envelope.message_deleted);
@@ -3799,6 +3904,47 @@ function setupEmojiPicker() {
       });
     }
   });
+
+  const btnDismissBanner = document.getElementById('btn-dismiss-connection-banner');
+  if (btnDismissBanner) {
+    btnDismissBanner.addEventListener('click', hideConnectionBanner);
+  }
+  const btnRenameContact = document.getElementById('btn-rename-contact');
+  const renameForm = document.getElementById('rename-contact-form');
+  const renameInput = document.getElementById('rename-contact-input');
+  const btnCancelRename = document.getElementById('btn-cancel-rename-contact');
+  if (btnRenameContact && renameForm && renameInput) {
+    btnRenameContact.addEventListener('click', () => {
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      renameInput.value = conv && conv.title ? conv.title : '';
+      renameForm.classList.remove('hidden');
+      renameInput.focus();
+    });
+  }
+  if (btnCancelRename && renameForm) {
+    btnCancelRename.addEventListener('click', () => {
+      renameForm.classList.add('hidden');
+    });
+  }
+  if (renameForm && renameInput) {
+    renameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = renameInput.value.trim();
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      if (!newName || !conv || !conv.contact_id || !window.conduitAPI?.renameContact) return;
+      try {
+        const updated = await window.conduitAPI.renameContact(conv.contact_id, newName);
+        const finalName = (updated && updated.display_name) ? updated.display_name : newName;
+        conv.title = finalName;
+        el.activeChatTitle.textContent = formatConversationTitle(conv);
+        renameForm.classList.add('hidden');
+        state.lastConversationsHash = '';
+        renderConversations();
+      } catch (err) {
+        showConnectionBanner(`No se pudo renombrar el contacto: ${err.message || err}`);
+      }
+    });
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -4941,6 +5087,47 @@ document.addEventListener('DOMContentLoaded', () => {
   // Navegación drill-down: volver del servidor a la lista unificada
   if (el.btnServerBack) {
     el.btnServerBack.addEventListener('click', closeServer);
+  }
+
+  const btnDismissBanner = document.getElementById('btn-dismiss-connection-banner');
+  if (btnDismissBanner) {
+    btnDismissBanner.addEventListener('click', hideConnectionBanner);
+  }
+  const btnRenameContact = document.getElementById('btn-rename-contact');
+  const renameForm = document.getElementById('rename-contact-form');
+  const renameInput = document.getElementById('rename-contact-input');
+  const btnCancelRename = document.getElementById('btn-cancel-rename-contact');
+  if (btnRenameContact && renameForm && renameInput) {
+    btnRenameContact.addEventListener('click', () => {
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      renameInput.value = conv && conv.title ? conv.title : '';
+      renameForm.classList.remove('hidden');
+      renameInput.focus();
+    });
+  }
+  if (btnCancelRename && renameForm) {
+    btnCancelRename.addEventListener('click', () => {
+      renameForm.classList.add('hidden');
+    });
+  }
+  if (renameForm && renameInput) {
+    renameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = renameInput.value.trim();
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      if (!newName || !conv || !conv.contact_id || !window.conduitAPI?.renameContact) return;
+      try {
+        const updated = await window.conduitAPI.renameContact(conv.contact_id, newName);
+        const finalName = (updated && updated.display_name) ? updated.display_name : newName;
+        conv.title = finalName;
+        el.activeChatTitle.textContent = formatConversationTitle(conv);
+        renameForm.classList.add('hidden');
+        state.lastConversationsHash = '';
+        renderConversations();
+      } catch (err) {
+        showConnectionBanner(`No se pudo renombrar el contacto: ${err.message || err}`);
+      }
+    });
   }
 
   window.addEventListener('keydown', (e) => {

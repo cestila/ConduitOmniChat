@@ -14,6 +14,17 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+### Added
+
+- Real-time outgoing message status updates (`pending`, `sent`, `delivered`, `read`, `failed`) via `EventEnvelope.message_status_updated` and status check icons in the GUI.
+- Plugin/account disconnection detection and live `channel_status_update` banner in the GUI (`channel.disconnected` and `StreamIncomingEvents` stream errors).
+- `RenameContact` RPC and inline chat header rename with `name_locked` protection against resync overwrites, plus `IsLegibleName` preference and phone fallback display for symbol-only PushNames.
+
+### Fixed
+
+- `Server.SendMessage` no longer leaves outgoing messages stuck in `pending` when the target plugin is not running; it marks them `failed` and publishes `EventMessageStatus`.
+- `gui/src/app.js` no longer hardcodes `fa-check-double` for all outgoing messages.
+
 ## [0.1.2] - 2026-11-17
 
 ### Added

@@ -373,6 +373,10 @@ function setupIpcHandlers() {
     return await rpcClient.splitChannel(channelId, newName);
   });
 
+  ipcMain.handle('conduit:renameContact', async (_e, contactId, displayName) => {
+    return await rpcClient.renameContact(contactId, displayName);
+  });
+
   ipcMain.handle('conduit:setContactIdentity', async (_e, contactId, email, phone) => {
     return await rpcClient.setContactIdentity(contactId, email, phone);
   });

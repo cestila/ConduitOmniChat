@@ -100,6 +100,9 @@ func main() {
 			for {
 				ev, err := stream.Recv()
 				if err != nil {
+					log.Printf("⚠️ Stream de eventos del plugin %s cerrado: %v", plugCfg.Name, err)
+					_ = db.UpdateAccountsStatusByProvider(context.Background(), plugCfg.Name, "disconnected", err.Error())
+					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+err.Error())
 					break
 				}
 				switch ev.EventType {
@@ -135,6 +138,40 @@ func main() {
 					go catchUpRecentMessages(db, pluginManager, plugCfg.Provider, 15)
 					// Reintenta los leídos que no pudieron llegar al proveedor mientras estaba caído.
 					go rpc.FlushPendingReadSyncForProvider(context.Background(), db, pluginManager, plugCfg.Provider)
+
+				case "channel.disconnected":
+					reason := strings.TrimSpace(ev.Body)
+					log.Printf("⚠️ Canal %s desconectado: %s", plugCfg.Name, reason)
+					_ = db.UpdateAccountsStatusByProvider(context.Background(), plugCfg.Name, "disconnected", reason)
+					if reason != "" {
+						bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+reason)
+					} else {
+						bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected")
+					}
+
+				case "message.status_updated", "message.delivered", "message.read":
+					target := domain.StatusDelivered
+					switch ev.EventType {
+					case "message.read":
+						target = domain.StatusRead
+					case "message.status_updated":
+						switch domain.MessageStatus(strings.ToLower(strings.TrimSpace(ev.Body))) {
+						case domain.StatusSent, domain.StatusDelivered, domain.StatusRead, domain.StatusFailed:
+							target = domain.MessageStatus(strings.ToLower(strings.TrimSpace(ev.Body)))
+						default:
+							target = ""
+						}
+					}
+					if target != "" && ev.RemoteMessageId != "" {
+						if msgID, convID, updated, err := db.UpdateOutgoingMessageStatusByRemoteID(context.Background(), plugCfg.Name, ev.RemoteMessageId, target); err == nil && updated {
+							bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+								MessageId:       msgID,
+								ConversationId:  convID,
+								Status:          string(target),
+								RemoteMessageId: ev.RemoteMessageId,
+							})
+						}
+					}
 
 				case "contact.sync":
 					// Si es un grupo, registrar como conversación independiente directamente SIN tocar la tabla de contactos

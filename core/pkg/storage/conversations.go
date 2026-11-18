@@ -196,7 +196,12 @@ func (d *DB) ListConversations(ctx context.Context, limit, offset int) ([]*condu
 			(SELECT ch.provider FROM contact_channels ch WHERE ch.id = c.active_channel_id),
 			(SELECT ch.provider FROM contact_channels ch WHERE ch.contact_id = c.contact_id ORDER BY ch.is_preferred DESC LIMIT 1),
 			''
-		) as provider
+		) as provider,
+		coalesce(
+			(SELECT nullif(ct.phone, '') FROM contacts ct WHERE ct.id = c.contact_id),
+			(SELECT nullif(ch.remote_id, '') FROM contact_channels ch WHERE ch.id = c.active_channel_id),
+			''
+		) as contact_phone
 	FROM conversations c
 	LEFT JOIN messages m ON c.id = m.conversation_id
 	GROUP BY c.id
@@ -217,7 +222,7 @@ func (d *DB) ListConversations(ctx context.Context, limit, offset int) ([]*condu
 		var snippet string
 		var msgCount int
 		var unreadCount int
-		if err := rows.Scan(&c.Id, &contactID, &c.IsGroup, &c.Title, &lastMsgRaw, &activeChan, &snippet, &msgCount, &unreadCount, &c.ServerId, &c.ServerName, &c.ParentChannelId, &c.ChannelType, &c.AvatarUrl, &c.Position, &c.Provider); err != nil {
+		if err := rows.Scan(&c.Id, &contactID, &c.IsGroup, &c.Title, &lastMsgRaw, &activeChan, &snippet, &msgCount, &unreadCount, &c.ServerId, &c.ServerName, &c.ParentChannelId, &c.ChannelType, &c.AvatarUrl, &c.Position, &c.Provider, &c.ContactPhone); err != nil {
 			return nil, err
 		}
 		c.UnreadCount = int32(unreadCount)
@@ -970,4 +975,68 @@ func (d *DB) ListContactIDsWithDuplicateDMConversations(ctx context.Context) ([]
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// UpdateOutgoingMessageStatusByRemoteID actualiza el estado de un mensaje saliente
+// identificado por remote_message_id (y proveedor si se indica) sin retroceder estados.
+func (d *DB) UpdateOutgoingMessageStatusByRemoteID(ctx context.Context, provider, remoteMsgID string, newStatus domain.MessageStatus) (messageID, conversationID string, updated bool, err error) {
+	if remoteMsgID == "" {
+		return "", "", false, nil
+	}
+	rank := func(s domain.MessageStatus) int {
+		switch s {
+		case domain.StatusPending:
+			return 1
+		case domain.StatusSent:
+			return 2
+		case domain.StatusDelivered:
+			return 3
+		case domain.StatusRead:
+			return 4
+		case domain.StatusFailed:
+			return 0
+		default:
+			return 0
+		}
+	}
+	targetRank := rank(newStatus)
+	if targetRank == 0 && newStatus != domain.StatusFailed {
+		return "", "", false, nil
+	}
+
+	var query string
+	var args []any
+	if provider != "" {
+		query = `
+		SELECT m.id, m.conversation_id, m.status
+		FROM messages m
+		JOIN contact_channels ch ON m.channel_id = ch.id
+		WHERE m.remote_message_id = ? AND LOWER(ch.provider) = LOWER(?) AND m.sender_type IN ('me', 'USER', 'OUTGOING')
+		LIMIT 1`
+		args = []any{remoteMsgID, provider}
+	} else {
+		query = `
+		SELECT id, conversation_id, status
+		FROM messages
+		WHERE remote_message_id = ? AND sender_type IN ('me', 'USER', 'OUTGOING')
+		LIMIT 1`
+		args = []any{remoteMsgID}
+	}
+
+	var curStatus string
+	err = d.conn.QueryRowContext(ctx, query, args...).Scan(&messageID, &conversationID, &curStatus)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+
+	if newStatus != domain.StatusFailed && rank(domain.MessageStatus(curStatus)) >= targetRank {
+		return messageID, conversationID, false, nil
+	}
+	if _, err := d.conn.ExecContext(ctx, `UPDATE messages SET status = ? WHERE id = ?`, string(newStatus), messageID); err != nil {
+		return "", "", false, err
+	}
+	return messageID, conversationID, true, nil
 }

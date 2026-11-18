@@ -22,6 +22,7 @@ type Contact struct {
 	AvatarURL   string           `json:"avatar_url,omitempty"`
 	Email       string           `json:"email,omitempty"` // Identidad canónica normalizada (minúsculas)
 	Phone       string           `json:"phone,omitempty"` // Identidad canónica normalizada (E.164)
+	NameLocked  bool             `json:"name_locked,omitempty"`
 	Channels    []ContactChannel `json:"channels,omitempty"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`

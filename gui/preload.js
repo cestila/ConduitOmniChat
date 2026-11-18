@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   listContacts: () => ipcRenderer.invoke('conduit:listContacts'),
   mergeContacts: (primaryId, secondaryId) => ipcRenderer.invoke('conduit:mergeContacts', primaryId, secondaryId),
   splitChannel: (channelId, newName) => ipcRenderer.invoke('conduit:splitChannel', channelId, newName),
+  renameContact: (contactId, displayName) => ipcRenderer.invoke('conduit:renameContact', contactId, displayName),
   setContactIdentity: (contactId, email, phone) => ipcRenderer.invoke('conduit:setContactIdentity', contactId, email, phone),
   findContactsByIdentity: (query) => ipcRenderer.invoke('conduit:findContactsByIdentity', query),
   getSettings: () => ipcRenderer.invoke('conduit:getSettings'),

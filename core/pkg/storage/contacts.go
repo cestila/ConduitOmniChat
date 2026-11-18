@@ -10,16 +10,21 @@ import (
 // SaveContact inserta o actualiza un contacto.
 func (d *DB) SaveContact(ctx context.Context, c *domain.Contact) error {
 	query := `
-	INSERT INTO contacts (id, display_name, avatar_url, email, phone, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO contacts (id, display_name, avatar_url, email, phone, name_locked, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		display_name=excluded.display_name,
 		avatar_url=excluded.avatar_url,
 		email=excluded.email,
 		phone=excluded.phone,
+		name_locked=excluded.name_locked,
 		updated_at=excluded.updated_at;
 	`
-	_, err := d.conn.ExecContext(ctx, query, c.ID, c.DisplayName, c.AvatarURL, nullableIdentity(c.Email), nullableIdentity(c.Phone), c.CreatedAt, c.UpdatedAt)
+	nameLocked := 0
+	if c.NameLocked {
+		nameLocked = 1
+	}
+	_, err := d.conn.ExecContext(ctx, query, c.ID, c.DisplayName, c.AvatarURL, nullableIdentity(c.Email), nullableIdentity(c.Phone), nameLocked, c.CreatedAt, c.UpdatedAt)
 	return err
 }
 
@@ -43,14 +48,16 @@ func scanContactIdentity(email, phone sql.NullString, c *domain.Contact) {
 
 // GetContactByID obtiene un contacto con sus canales asociados.
 func (d *DB) GetContactByID(ctx context.Context, id string) (*domain.Contact, error) {
-	query := `SELECT id, display_name, avatar_url, email, phone, created_at, updated_at FROM contacts WHERE id = ?`
+	query := `SELECT id, display_name, avatar_url, email, phone, coalesce(name_locked, 0), created_at, updated_at FROM contacts WHERE id = ?`
 	row := d.conn.QueryRowContext(ctx, query, id)
 
 	var c domain.Contact
 	var avatar, email, phone sql.NullString
-	if err := row.Scan(&c.ID, &c.DisplayName, &avatar, &email, &phone, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	var nameLocked int
+	if err := row.Scan(&c.ID, &c.DisplayName, &avatar, &email, &phone, &nameLocked, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
+	c.NameLocked = nameLocked != 0
 	if avatar.Valid {
 		c.AvatarURL = avatar.String
 	}
@@ -65,7 +72,7 @@ func (d *DB) GetContactByID(ctx context.Context, id string) (*domain.Contact, er
 
 // ListContacts lista todos los contactos con sus canales.
 func (d *DB) ListContacts(ctx context.Context) ([]domain.Contact, error) {
-	rows, err := d.conn.QueryContext(ctx, `SELECT id, display_name, avatar_url, email, phone, created_at, updated_at FROM contacts ORDER BY display_name ASC`)
+	rows, err := d.conn.QueryContext(ctx, `SELECT id, display_name, avatar_url, email, phone, coalesce(name_locked, 0), created_at, updated_at FROM contacts ORDER BY display_name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -75,9 +82,11 @@ func (d *DB) ListContacts(ctx context.Context) ([]domain.Contact, error) {
 	for rows.Next() {
 		var c domain.Contact
 		var avatar, email, phone sql.NullString
-		if err := rows.Scan(&c.ID, &c.DisplayName, &avatar, &email, &phone, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		var nameLocked int
+		if err := rows.Scan(&c.ID, &c.DisplayName, &avatar, &email, &phone, &nameLocked, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
+		c.NameLocked = nameLocked != 0
 		if avatar.Valid {
 			c.AvatarURL = avatar.String
 		}
@@ -86,6 +95,27 @@ func (d *DB) ListContacts(ctx context.Context) ([]domain.Contact, error) {
 		contacts = append(contacts, c)
 	}
 	return contacts, nil
+}
+
+// RenameContact actualiza manualmente el nombre de un contacto, bloqueando sobrescrituras por resync,
+// y sincroniza el título de las conversaciones 1 a 1 vinculadas.
+func (d *DB) RenameContact(ctx context.Context, contactID, displayName string) (*domain.Contact, error) {
+	res, err := d.conn.ExecContext(ctx, `UPDATE contacts SET display_name = ?, name_locked = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, displayName, contactID)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return nil, sql.ErrNoRows
+	}
+	_, _ = d.conn.ExecContext(ctx, `UPDATE conversations SET title = ? WHERE contact_id = ? AND is_group = 0`, displayName, contactID)
+	return d.GetContactByID(ctx, contactID)
+}
+
+// UpdateConversationTitleByContact actualiza el título de las conversaciones 1 a 1 de un contacto.
+func (d *DB) UpdateConversationTitleByContact(ctx context.Context, contactID, title string) error {
+	_, err := d.conn.ExecContext(ctx, `UPDATE conversations SET title = ? WHERE contact_id = ? AND is_group = 0`, title, contactID)
+	return err
 }
 
 // FindContactByEmail busca el contacto dueño de un email canónico. Devuelve sql.ErrNoRows si no existe.

@@ -352,21 +352,44 @@ func (s *Server) SendMessage(ctx context.Context, req *conduitv1.SendMessageRequ
 					fmt.Printf("⚠️ Error enviando mensaje a plugin %s: %v\n", pluginName, err)
 					domainMsg.Status = domain.StatusFailed
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:      domainMsg.ID,
+						ConversationId: domainMsg.ConversationID,
+						Status:         string(domain.StatusFailed),
+						Error:          err.Error(),
+					})
 				} else if !resp.Success {
 					fmt.Printf("⚠️ Plugin %s rechazó el envío de mensaje: %s\n", pluginName, resp.ErrorMessage)
 					domainMsg.Status = domain.StatusFailed
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:      domainMsg.ID,
+						ConversationId: domainMsg.ConversationID,
+						Status:         string(domain.StatusFailed),
+						Error:          resp.ErrorMessage,
+					})
 				} else {
 					domainMsg.Status = domain.StatusSent
 					domainMsg.RemoteMessageID = resp.RemoteMessageId
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:       domainMsg.ID,
+						ConversationId:  domainMsg.ConversationID,
+						Status:          string(domain.StatusSent),
+						RemoteMessageId: domainMsg.RemoteMessageID,
+					})
 				}
 			}()
 		} else {
+			errMsg := fmt.Sprintf("plugin '%s' is not running", pluginName)
 			fmt.Printf("⚠️ No se encontró plugin instanciado para '%s'\n", pluginName)
+			domainMsg.Status = domain.StatusFailed
+			s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+				MessageId:      domainMsg.ID,
+				ConversationId: domainMsg.ConversationID,
+				Status:         string(domain.StatusFailed),
+				Error:          errMsg,
+			})
 		}
 	}
 
@@ -482,11 +505,15 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	subUpdated := s.bus.Subscribe(eventbus.EventMessageUpdated)
 	subDeleted := s.bus.Subscribe(eventbus.EventMessageDeleted)
 	subRead := s.bus.Subscribe(eventbus.EventConversationRead)
+	subStatus := s.bus.Subscribe(eventbus.EventMessageStatus)
+	subChannel := s.bus.Subscribe(eventbus.EventChannelConnected)
 	defer s.bus.Unsubscribe(eventbus.EventMessageReceived, subReceived)
 	defer s.bus.Unsubscribe(eventbus.EventMessageSent, subSent)
 	defer s.bus.Unsubscribe(eventbus.EventMessageUpdated, subUpdated)
 	defer s.bus.Unsubscribe(eventbus.EventMessageDeleted, subDeleted)
 	defer s.bus.Unsubscribe(eventbus.EventConversationRead, subRead)
+	defer s.bus.Unsubscribe(eventbus.EventMessageStatus, subStatus)
+	defer s.bus.Unsubscribe(eventbus.EventChannelConnected, subChannel)
 
 	for {
 		select {
@@ -551,6 +578,44 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 					TimestampUnix: ev.Timestamp.Unix(),
 					Payload: &conduitv1.EventEnvelope_ConversationRead{
 						ConversationRead: readEv,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subStatus:
+			var statusEv *conduitv1.MessageStatusEvent
+			switch p := ev.Payload.(type) {
+			case *conduitv1.MessageStatusEvent:
+				statusEv = p
+			case *domain.Message:
+				statusEv = &conduitv1.MessageStatusEvent{
+					MessageId:       p.ID,
+					ConversationId:  p.ConversationID,
+					Status:          string(p.Status),
+					RemoteMessageId: p.RemoteMessageID,
+				}
+			}
+			if statusEv != nil {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_MessageStatusUpdated{
+						MessageStatusUpdated: statusEv,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subChannel:
+			if msg, ok := ev.Payload.(string); ok {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
+						ChannelStatusUpdate: msg,
 					},
 				})
 				if err != nil {
@@ -693,6 +758,31 @@ func (s *Server) MergeContacts(ctx context.Context, req *conduitv1.MergeContacts
 
 	return &conduitv1.MergeContactsResponse{
 		MergedContact: protoContactFromDomain(merged),
+	}, nil
+}
+
+// RenameContact actualiza manualmente el nombre visible de un contacto y lo protege contra sobrescrituras de resync.
+func (s *Server) RenameContact(ctx context.Context, req *conduitv1.RenameContactRequest) (*conduitv1.RenameContactResponse, error) {
+	if strings.TrimSpace(req.ContactId) == "" {
+		return nil, status.Error(codes.InvalidArgument, "contact_id is required")
+	}
+	trimmed := strings.TrimSpace(req.DisplayName)
+	if trimmed == "" {
+		return nil, status.Error(codes.InvalidArgument, "display_name is required")
+	}
+	contact, err := s.db.RenameContact(ctx, req.ContactId, trimmed)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "error renaming contact: %v", err)
+	}
+	return &conduitv1.RenameContactResponse{
+		Contact: &conduitv1.ProtoContact{
+			Id:          contact.ID,
+			DisplayName: contact.DisplayName,
+			AvatarUrl:   contact.AvatarURL,
+			Email:       contact.Email,
+			Phone:       contact.Phone,
+			NameLocked:  contact.NameLocked,
+		},
 	}, nil
 }
 

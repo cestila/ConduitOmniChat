@@ -28,6 +28,7 @@ const (
 	ConduitService_ListContacts_FullMethodName           = "/conduit.v1.ConduitService/ListContacts"
 	ConduitService_MergeContacts_FullMethodName          = "/conduit.v1.ConduitService/MergeContacts"
 	ConduitService_SplitChannel_FullMethodName           = "/conduit.v1.ConduitService/SplitChannel"
+	ConduitService_RenameContact_FullMethodName          = "/conduit.v1.ConduitService/RenameContact"
 	ConduitService_SetContactIdentity_FullMethodName     = "/conduit.v1.ConduitService/SetContactIdentity"
 	ConduitService_FindContactsByIdentity_FullMethodName = "/conduit.v1.ConduitService/FindContactsByIdentity"
 	ConduitService_ListAccounts_FullMethodName           = "/conduit.v1.ConduitService/ListAccounts"
@@ -73,6 +74,7 @@ type ConduitServiceClient interface {
 	ListContacts(ctx context.Context, in *ListContactsRequest, opts ...grpc.CallOption) (*ListContactsResponse, error)
 	MergeContacts(ctx context.Context, in *MergeContactsRequest, opts ...grpc.CallOption) (*MergeContactsResponse, error)
 	SplitChannel(ctx context.Context, in *SplitChannelRequest, opts ...grpc.CallOption) (*SplitChannelResponse, error)
+	RenameContact(ctx context.Context, in *RenameContactRequest, opts ...grpc.CallOption) (*RenameContactResponse, error)
 	// Identidad canónica por email y teléfono (enlace entre proveedores)
 	SetContactIdentity(ctx context.Context, in *SetContactIdentityRequest, opts ...grpc.CallOption) (*SetContactIdentityResponse, error)
 	FindContactsByIdentity(ctx context.Context, in *FindContactsByIdentityRequest, opts ...grpc.CallOption) (*FindContactsByIdentityResponse, error)
@@ -208,6 +210,16 @@ func (c *conduitServiceClient) SplitChannel(ctx context.Context, in *SplitChanne
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SplitChannelResponse)
 	err := c.cc.Invoke(ctx, ConduitService_SplitChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) RenameContact(ctx context.Context, in *RenameContactRequest, opts ...grpc.CallOption) (*RenameContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenameContactResponse)
+	err := c.cc.Invoke(ctx, ConduitService_RenameContact_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +458,7 @@ type ConduitServiceServer interface {
 	ListContacts(context.Context, *ListContactsRequest) (*ListContactsResponse, error)
 	MergeContacts(context.Context, *MergeContactsRequest) (*MergeContactsResponse, error)
 	SplitChannel(context.Context, *SplitChannelRequest) (*SplitChannelResponse, error)
+	RenameContact(context.Context, *RenameContactRequest) (*RenameContactResponse, error)
 	// Identidad canónica por email y teléfono (enlace entre proveedores)
 	SetContactIdentity(context.Context, *SetContactIdentityRequest) (*SetContactIdentityResponse, error)
 	FindContactsByIdentity(context.Context, *FindContactsByIdentityRequest) (*FindContactsByIdentityResponse, error)
@@ -514,6 +527,9 @@ func (UnimplementedConduitServiceServer) MergeContacts(context.Context, *MergeCo
 }
 func (UnimplementedConduitServiceServer) SplitChannel(context.Context, *SplitChannelRequest) (*SplitChannelResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SplitChannel not implemented")
+}
+func (UnimplementedConduitServiceServer) RenameContact(context.Context, *RenameContactRequest) (*RenameContactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenameContact not implemented")
 }
 func (UnimplementedConduitServiceServer) SetContactIdentity(context.Context, *SetContactIdentityRequest) (*SetContactIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetContactIdentity not implemented")
@@ -750,6 +766,24 @@ func _ConduitService_SplitChannel_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ConduitServiceServer).SplitChannel(ctx, req.(*SplitChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_RenameContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).RenameContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_RenameContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).RenameContact(ctx, req.(*RenameContactRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1170,6 +1204,10 @@ var ConduitService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SplitChannel",
 			Handler:    _ConduitService_SplitChannel_Handler,
+		},
+		{
+			MethodName: "RenameContact",
+			Handler:    _ConduitService_RenameContact_Handler,
 		},
 		{
 			MethodName: "SetContactIdentity",

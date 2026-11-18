@@ -28,6 +28,7 @@ service ConduitService {
   rpc ListContacts(ListContactsRequest) returns (ListContactsResponse);
   rpc MergeContacts(MergeContactsRequest) returns (MergeContactsResponse);
   rpc SplitChannel(SplitChannelRequest) returns (SplitChannelResponse);
+  rpc RenameContact(RenameContactRequest) returns (RenameContactResponse);
 
   // Identidad canónica por email y teléfono (enlace entre proveedores)
   rpc SetContactIdentity(SetContactIdentityRequest) returns (SetContactIdentityResponse);
@@ -159,6 +160,7 @@ message ProtoContact {
   repeated ProtoChannel channels = 4;
   string email = 5;  // Identidad canónica normalizada (minúsculas)
   string phone = 6;  // Identidad canónica normalizada (E.164)
+  bool name_locked = 8; // true cuando el usuario renombró manualmente el contacto
 }
 
 message ProtoChannel {
@@ -189,6 +191,7 @@ message ProtoConversation {
   string avatar_url = 13;           // URL de imagen / avatar del contacto o grupo
   int32 position = 14;              // Orden en que el servidor publica el canal (0 = desconocido)
   string provider = 15;             // Proveedor del canal activo: 'whatsapp', 'telegram', 'discord'
+  string contact_phone = 16;        // Teléfono/identificador legible de respaldo cuando el título no es legible
 }
 
 message ProtoAttachment {
@@ -311,7 +314,25 @@ message EventEnvelope {
     ProtoMessage message_updated = 6;
     string message_deleted = 7; // ID local del mensaje eliminado
     ConversationReadEvent conversation_read = 8; // Notificación de conversación / mensajes leídos
+    MessageStatusEvent message_status_updated = 9; // Cambio de estado saliente (pending/sent/delivered/read/failed)
   }
+}
+
+message MessageStatusEvent {
+  string message_id = 1;
+  string conversation_id = 2;
+  string status = 3; // pending | sent | delivered | read | failed
+  string remote_message_id = 4;
+  string error = 5;
+}
+
+message RenameContactRequest {
+  string contact_id = 1;
+  string display_name = 2;
+}
+
+message RenameContactResponse {
+  ProtoContact contact = 1;
 }
 
 message ConversationReadEvent {

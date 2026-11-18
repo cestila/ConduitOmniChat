@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 )
@@ -87,5 +88,105 @@ func TestLegacyContactsTableMigratesIdentityColumns(t *testing.T) {
 	other := &domain.Contact{ID: "legacy-2", DisplayName: "Otro", Email: "legacy@example.com"}
 	if err := db.SaveContact(ctx, other); err == nil {
 		t.Fatalf("se esperaba un error al duplicar el email canónico")
+	}
+}
+
+func TestRenameContactSetsNameLockedAndUpdatesConversation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "rename.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	if err := db.SaveContact(ctx, &domain.Contact{
+		ID:          "c-1",
+		DisplayName: ".",
+		Phone:       "+5492664000001",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveContact: %v", err)
+	}
+	if err := db.SaveChannel(ctx, &domain.ContactChannel{
+		ID:        "ch-1",
+		ContactID: "c-1",
+		Provider:  domain.ProviderWhatsApp,
+		RemoteID:  "+5492664000001",
+	}); err != nil {
+		t.Fatalf("SaveChannel: %v", err)
+	}
+	cID, chID := "c-1", "ch-1"
+	if err := db.EnsureConversation(ctx, &domain.Conversation{
+		ID:              "conv-1",
+		ContactID:       &cID,
+		IsGroup:         false,
+		Title:           ".",
+		ActiveChannelID: &chID,
+	}); err != nil {
+		t.Fatalf("EnsureConversation: %v", err)
+	}
+
+	renamed, err := db.RenameContact(ctx, "c-1", "Maximiliano Collado")
+	if err != nil {
+		t.Fatalf("RenameContact: %v", err)
+	}
+	if renamed.DisplayName != "Maximiliano Collado" || !renamed.NameLocked {
+		t.Fatalf("unexpected renamed contact: %+v", renamed)
+	}
+
+	convs, err := db.ListConversations(ctx, 10, 0)
+	if err != nil || len(convs) != 1 {
+		t.Fatalf("ListConversations: %v len=%d", err, len(convs))
+	}
+	if convs[0].Title != "Maximiliano Collado" {
+		t.Fatalf("expected conversation title updated, got %q", convs[0].Title)
+	}
+	if convs[0].ContactPhone != "+5492664000001" {
+		t.Fatalf("expected ContactPhone '+5492664000001', got %q", convs[0].ContactPhone)
+	}
+}
+
+func TestUpdateOutgoingMessageStatusByRemoteIDMonotonic(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "msg_status.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	_ = db.SaveContact(ctx, &domain.Contact{ID: "c-1", DisplayName: "Ana", CreatedAt: now, UpdatedAt: now})
+	_ = db.SaveChannel(ctx, &domain.ContactChannel{ID: "ch-1", ContactID: "c-1", Provider: domain.ProviderWhatsApp, RemoteID: "+549111"})
+	cID, chID := "c-1", "ch-1"
+	_ = db.EnsureConversation(ctx, &domain.Conversation{ID: "conv-1", ContactID: &cID, IsGroup: false, Title: "Ana", ActiveChannelID: &chID})
+	_ = db.SaveMessage(ctx, &domain.Message{
+		ID:              "m-1",
+		ConversationID:  "conv-1",
+		ChannelID:       "ch-1",
+		RemoteMessageID: "wa-msg-123",
+		SenderType:      domain.SenderMe,
+		Body:            "hola",
+		ContentType:     domain.ContentTypeText,
+		Status:          domain.StatusSent,
+		SentAt:          now,
+		ReceivedAt:      now,
+	})
+
+	id, convID, updated, err := db.UpdateOutgoingMessageStatusByRemoteID(ctx, "whatsapp", "wa-msg-123", domain.StatusDelivered)
+	if err != nil || !updated || id != "m-1" || convID != "conv-1" {
+		t.Fatalf("expected delivered update, got id=%q conv=%q updated=%v err=%v", id, convID, updated, err)
+	}
+	id, convID, updated, err = db.UpdateOutgoingMessageStatusByRemoteID(ctx, "whatsapp", "wa-msg-123", domain.StatusRead)
+	if err != nil || !updated {
+		t.Fatalf("expected read update, got updated=%v err=%v", updated, err)
+	}
+	// Never downgrade from read back to delivered
+	_, _, updated, err = db.UpdateOutgoingMessageStatusByRemoteID(ctx, "whatsapp", "wa-msg-123", domain.StatusDelivered)
+	if err != nil || updated {
+		t.Fatalf("expected no downgrade from read, got updated=%v err=%v", updated, err)
 	}
 }

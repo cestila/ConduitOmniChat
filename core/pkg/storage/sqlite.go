@@ -69,6 +69,7 @@ func (d *DB) migrate() error {
 		avatar_url TEXT,
 		email TEXT,
 		phone TEXT,
+		name_locked INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -168,6 +169,7 @@ func (d *DB) migrate() error {
 	_, _ = d.conn.Exec("ALTER TABLE conversations ADD COLUMN position INTEGER DEFAULT 0;")
 	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN email TEXT;")
 	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN phone TEXT;")
+	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN name_locked INTEGER NOT NULL DEFAULT 0;")
 	// Remitente remoto de cada mensaje (WhatsApp exige el participante para marcar leídos en grupos)
 	// y marca de leído local todavía no confirmado por el proveedor.
 	_, _ = d.conn.Exec("ALTER TABLE messages ADD COLUMN sender_remote_id TEXT;")
