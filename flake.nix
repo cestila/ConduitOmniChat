@@ -145,7 +145,7 @@ DESKTOP
                 base != ".git";
           };
 
-          npmDepsHash = "sha256-TnbeThxfjtyvzu0yMzS5WCmwfB3SrBPezT9Mj2ywARM=";
+          npmDepsHash = "sha256-BSlQJJ2drJExrv3eyZr+X0SPzlqZ0tMUpI15wg0Q6kQ=";
           dontNpmBuild = true;
 
           env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";

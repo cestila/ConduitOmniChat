@@ -10,6 +10,7 @@ import (
 	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/plugininstall"
 	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
+	"github.com/cestila/ConduitOmniChat/sdk/pluginsdk"
 )
 
 // pluginInstaller is the part of plugininstall.Installer the CLI needs.
@@ -25,6 +26,7 @@ type cliDeps struct {
 	PluginDirs []string // search directories in precedence order
 	Registry   *pluginmgr.RegistryClient
 	Manifest   *pluginmgr.ManifestStore
+	TUIVersion string // optional override for testing; defaults to probeTUIVersion("")
 }
 
 const cliUsage = `Usage:
@@ -231,6 +233,28 @@ func runPluginCheck(ctx context.Context, stdout io.Writer, deps cliDeps) error {
 		regByID[rp.ID] = rp
 	}
 
+	coreLatest := reg.Core.Version
+	if coreLatest == "" && local != nil {
+		coreLatest = local.Core.Version
+	}
+	coreLatestCol := coreLatest
+	if coreLatestCol == "" {
+		coreLatestCol = "-"
+	}
+	coreStatus := "ok"
+	if coreLatest != "" && pluginmgr.CompareSemver(coreLatest, buildinfo.Version) > 0 {
+		coreStatus = "update-available"
+	}
+	fmt.Fprintf(stdout, "core\t%s\t%s\t%s\n", buildinfo.Version, coreLatestCol, coreStatus)
+
+	tuiVer := strings.TrimSpace(deps.TUIVersion)
+	if tuiVer == "" {
+		tuiVer = probeTUIVersion("")
+	}
+	if tuiVer != "" {
+		fmt.Fprintf(stdout, "tui\t%s\t-\tok\n", tuiVer)
+	}
+
 	bins := pluginmgr.FindBinaries(deps.PluginDirs)
 	if len(bins) == 0 {
 		fmt.Fprintln(stdout, "no plugins installed")
@@ -269,9 +293,63 @@ func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, target
 	if deps.Installer == nil {
 		return fmt.Errorf("plugin installer is not available")
 	}
+	reg := pluginmgr.CatalogRegistry()
+	if deps.Registry != nil {
+		if fetched, _, _ := deps.Registry.Fetch(ctx, false); fetched != nil {
+			reg = fetched
+		}
+	}
 	var local *pluginmgr.LocalManifest
 	if deps.Manifest != nil {
 		local, _ = deps.Manifest.Load()
+	}
+
+	regByID := map[string]pluginmgr.RegistryPlugin{}
+	for _, rp := range reg.Plugins {
+		regByID[rp.ID] = rp
+	}
+	installedVersions := map[string]string{}
+	if local != nil {
+		for id, rec := range local.Plugins {
+			if rec.InstalledVersion != "" {
+				installedVersions[id] = rec.InstalledVersion
+			}
+		}
+	}
+	resolveEntry := func(id string) pluginmgr.RegistryPlugin {
+		if rp, ok := regByID[id]; ok {
+			if local != nil {
+				if rec, ok := local.Plugins[id]; ok {
+					if rp.LatestVersion == "" && rec.LatestVersion != "" {
+						rp.LatestVersion = rec.LatestVersion
+					}
+					if rp.MinCoreVersion == "" && rec.MinCoreVersion != "" {
+						rp.MinCoreVersion = rec.MinCoreVersion
+					}
+					if rp.MinProtocolVersion == 0 && rec.MinProtocolVersion > 0 {
+						rp.MinProtocolVersion = rec.MinProtocolVersion
+					}
+					if rp.MaxProtocolVersion == 0 && rec.MaxProtocolVersion > 0 {
+						rp.MaxProtocolVersion = rec.MaxProtocolVersion
+					}
+				}
+			}
+			return rp
+		}
+		if local != nil {
+			if rec, ok := local.Plugins[id]; ok {
+				return pluginmgr.RegistryPlugin{
+					ID:                 id,
+					Repository:         rec.Repository,
+					LatestVersion:      rec.LatestVersion,
+					MinCoreVersion:     rec.MinCoreVersion,
+					MinProtocolVersion: rec.MinProtocolVersion,
+					MaxProtocolVersion: rec.MaxProtocolVersion,
+					Dependencies:       rec.Dependencies,
+				}
+			}
+		}
+		return pluginmgr.RegistryPlugin{ID: id}
 	}
 
 	bins := pluginmgr.FindBinaries(deps.PluginDirs)
@@ -292,6 +370,12 @@ func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, target
 				fmt.Fprintf(stdout, "skipped %s (managed externally at %s)\n", id, p)
 				continue
 			}
+			installedVer := installedVersions[id]
+			latestVer := resolveEntry(id).LatestVersion
+			if installedVer != "" && latestVer != "" && pluginmgr.CompareSemver(latestVer, installedVer) <= 0 {
+				fmt.Fprintf(stdout, "up-to-date %s (%s)\n", id, installedVer)
+				continue
+			}
 			targets = append(targets, id)
 		}
 	} else {
@@ -302,6 +386,15 @@ func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, target
 	}
 
 	for _, id := range targets {
+		entry := resolveEntry(id)
+		if compat, reason := pluginmgr.CheckCompatibility(entry, buildinfo.Version, pluginsdk.ProtocolVersion, installedVersions); !compat {
+			if all {
+				fmt.Fprintf(stdout, "skipped %s (incompatible: %s)\n", id, reason)
+				continue
+			}
+			return fmt.Errorf("plugin %q is incompatible: %s", id, reason)
+		}
+
 		spec := id
 		if _, ok := pluginmgr.CatalogEntryFor(id); !ok && local != nil {
 			if rec, ok := local.Plugins[id]; ok && rec.Repository != "" {
@@ -311,6 +404,29 @@ func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, target
 		res, err := deps.Installer.Install(ctx, spec, "")
 		if err != nil {
 			return err
+		}
+		if deps.Manifest != nil {
+			if local == nil {
+				local = &pluginmgr.LocalManifest{SchemaVersion: 1, Plugins: map[string]pluginmgr.LocalPluginRecord{}}
+			}
+			if local.Plugins == nil {
+				local.Plugins = map[string]pluginmgr.LocalPluginRecord{}
+			}
+			rec := local.Plugins[res.ID]
+			rec.ID = res.ID
+			rec.InstalledVersion = res.Version
+			if rec.Repository == "" {
+				rec.Repository = entry.Repository
+			}
+			if rec.Source == "" {
+				if strings.Contains(spec, "/") {
+					rec.Source = "third-party"
+				} else {
+					rec.Source = "official"
+				}
+			}
+			local.Plugins[res.ID] = rec
+			_ = deps.Manifest.Save(local)
 		}
 		fmt.Fprintf(stdout, "updated %s %s -> %s\n", res.ID, res.Version, res.Path)
 	}

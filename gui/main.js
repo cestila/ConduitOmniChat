@@ -17,6 +17,7 @@ let autoUpdaterInstance = null;
 let updateDownloaded = false;
 let lastUpdateAvailable = false;
 let startupUpdateTimer = null;
+let isBackgroundCheck = false;
 
 function getAppInfo() {
   const { packagingMode, selfUpdateSupported } = detectPackagingMode({
@@ -84,6 +85,7 @@ function setupAutoUpdater() {
     });
   });
   autoUpdater.on('error', (err) => {
+    if (isBackgroundCheck) return;
     sendAppUpdateEvent('update-error', {
       message: err?.message || String(err)
     });
@@ -469,6 +471,7 @@ function setupIpcHandlers() {
       return { supported: false, updateAvailable: false, packagingMode: info.packagingMode };
     }
     try {
+      isBackgroundCheck = false;
       const result = await autoUpdaterInstance.checkForUpdates();
       const updateAvailable = Boolean(
         result && typeof result.isUpdateAvailable === 'boolean'
@@ -726,7 +729,7 @@ ipcMain.handle('conduit:openPath', async (_e, filePath) => {
 });
 
 ipcMain.handle('conduit:openExternal', async (_e, url) => {
-  if (!url) return false;
+  if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
   try {
     await shell.openExternal(url);
     return true;
@@ -778,9 +781,14 @@ app.whenReady().then(async () => {
   if (autoUpdaterInstance) {
     startupUpdateTimer = setTimeout(() => {
       startupUpdateTimer = null;
-      autoUpdaterInstance.checkForUpdates().catch((err) => {
-        console.warn('[Updater] Background update check failed:', err.message);
-      });
+      isBackgroundCheck = true;
+      autoUpdaterInstance.checkForUpdates()
+        .catch((err) => {
+          console.warn('[Updater] Background update check failed:', err.message);
+        })
+        .finally(() => {
+          isBackgroundCheck = false;
+        });
     }, 5000);
     if (typeof startupUpdateTimer.unref === 'function') {
       startupUpdateTimer.unref();

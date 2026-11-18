@@ -650,12 +650,17 @@
                 <span class="about-label">TUI</span>
                 <strong id="about-tui-version">Not installed</strong>
               </div>
+              <div class="about-version-item">
+                <span class="about-label">Plataforma / Empaquetado</span>
+                <strong id="about-packaging">-</strong>
+              </div>
             </div>
 
             <div class="about-update-actions" style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
               <button class="btn-card btn-primary" id="btn-check-updates" type="button">
                 <i class="fa-solid fa-rotate"></i> Buscar actualizaciones
               </button>
+              <span id="about-checked-at" class="about-checked-at text-muted" style="font-size:12px;"></span>
               <div id="about-update-status" class="about-update-banner hidden"></div>
             </div>
 
@@ -665,7 +670,10 @@
                 <thead>
                   <tr>
                     <th>Plugin</th>
+                    <th>Origen</th>
                     <th>Versión</th>
+                    <th>Última</th>
+                    <th>Compatibilidad</th>
                     <th>Estado</th>
                   </tr>
                 </thead>

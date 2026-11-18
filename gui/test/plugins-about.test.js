@@ -304,5 +304,115 @@ const pluginsFixture = [
     `calls=${appSelfUpdate.calls.installAppUpdate.length}`
   );
 
+  // 8. update-available IPC event renders #btn-download-app-update and populates #about-update-status
+  const appEvtUpdate = createHarness({
+    status: { core_version: '0.9.5', protocol_version: 2, tui_version: '' },
+    plugins: pluginsFixture,
+    appInfo: { version: '0.1.1', platform: 'linux', packagingMode: 'appimage', selfUpdateSupported: true },
+  });
+  await appEvtUpdate.start();
+  appEvtUpdate.emitAppUpdateEvent({ type: 'update-available', version: '0.3.0' });
+  const evtStatusEl = appEvtUpdate.documentStub.getElementById('about-update-status');
+  const evtDownloadBtn = appEvtUpdate.documentStub.getElementById('btn-download-app-update');
+  check(
+    'update-available IPC event populates #about-update-status and renders #btn-download-app-update',
+    evtStatusEl.innerHTML.includes('v0.3.0') && evtStatusEl.innerHTML.includes('btn-download-app-update') && !!evtDownloadBtn,
+    evtStatusEl.innerHTML
+  );
+
+  // 9. Disabled Update / Update All on compatible === false, plus Official / Third-Party badges & About metadata
+  const mixedPlugins = [
+    {
+      id: 'conduit-plugin-whatsapp',
+      name: 'WhatsApp Plugin',
+      version: '1.2.0',
+      latest_version: '1.3.0',
+      update_available: true,
+      is_new: false,
+      compatible: false,
+      incompatibility_reason: 'Requires Core >= v2.0.0',
+      managed_externally: false,
+      is_third_party: false,
+      is_installed: true,
+      is_enabled: true,
+    },
+    {
+      id: 'conduit-plugin-matrix',
+      name: 'Matrix Plugin',
+      version: '0.5.0',
+      latest_version: '0.5.0',
+      update_available: false,
+      is_new: false,
+      compatible: true,
+      managed_externally: false,
+      is_third_party: true,
+      is_installed: true,
+      is_enabled: false,
+    },
+  ];
+  const appMixed = createHarness({
+    status: { core_version: '0.9.5', protocol_version: 2, tui_version: '' },
+    plugins: mixedPlugins,
+    appInfo: { version: '0.1.1', platform: 'linux', packagingMode: 'nix-appimage', selfUpdateSupported: false },
+    updatesResponse: {
+      registry_reachable: true,
+      gui_latest_version: '0.1.1',
+      gui_release_url: 'https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.1',
+      gui_update_available: false,
+      core_update_available: false,
+      checked_at: '2026-11-18T14:00:00Z',
+      plugins: mixedPlugins,
+    },
+  });
+  await appMixed.start();
+  await new Promise(r => setTimeout(r, 10));
+
+  const mixedCards = appMixed.el.pluginsList.children;
+  const incompatUpdateBtn = mixedCards[0].querySelector('.btn-update-plugin');
+  check(
+    'incompatible plugin disables Update button with incompatibility_reason title',
+    !!incompatUpdateBtn && incompatUpdateBtn.disabled === true && incompatUpdateBtn.title === 'Requires Core >= v2.0.0',
+    incompatUpdateBtn ? `disabled=${incompatUpdateBtn.disabled} title=${incompatUpdateBtn.title}` : 'missing btn'
+  );
+  const mixedUpdateAllBtn = appMixed.documentStub.getElementById('btn-update-all-plugins');
+  check(
+    'Update All is disabled when only incompatible updates exist',
+    mixedUpdateAllBtn.disabled === true,
+    `disabled=${mixedUpdateAllBtn.disabled}`
+  );
+  check(
+    'Official and Third-Party badges render on plugin cards',
+    mixedCards[0].innerHTML.includes('Official') && mixedCards[1].innerHTML.includes('Third-Party'),
+    `${mixedCards[0].innerHTML} | ${mixedCards[1].innerHTML}`
+  );
+
+  await appMixed.checkForUpdates();
+  const aboutPkg = appMixed.documentStub.getElementById('about-packaging');
+  const aboutChecked = appMixed.documentStub.getElementById('about-checked-at');
+  const aboutTbody = appMixed.documentStub.getElementById('about-plugins-tbody');
+  check(
+    'About renders platform/packagingMode',
+    aboutPkg.textContent.includes('linux') && aboutPkg.textContent.includes('nix-appimage'),
+    aboutPkg.textContent
+  );
+  check(
+    'About renders checked_at timestamp after checkUpdates',
+    aboutChecked.textContent.includes('2026-11-18T14:00:00Z'),
+    aboutChecked.textContent
+  );
+  check(
+    'About plugins table renders Official/Third-Party, latest_version, and compatibility',
+    aboutTbody.innerHTML.includes('Official') &&
+      aboutTbody.innerHTML.includes('Third-Party') &&
+      aboutTbody.innerHTML.includes('v1.3.0') &&
+      aboutTbody.innerHTML.includes('Incompatible: Requires Core &gt;= v2.0.0'),
+    aboutTbody.innerHTML
+  );
+  check(
+    'selfUpdateSupported=false runs non-blocking checkUpdates(false) on startup',
+    appMixed.calls.checkUpdates.some(c => c[0] === false),
+    JSON.stringify(appMixed.calls.checkUpdates)
+  );
+
   finish();
 })();

@@ -102,6 +102,8 @@ const el = {
   aboutCoreVersion: document.getElementById('about-core-version'),
   aboutSdkProtocol: document.getElementById('about-sdk-protocol'),
   aboutTuiVersion: document.getElementById('about-tui-version'),
+  aboutPackaging: document.getElementById('about-packaging'),
+  aboutCheckedAt: document.getElementById('about-checked-at'),
   aboutPluginsTbody: document.getElementById('about-plugins-tbody'),
   btnCheckUpdates: document.getElementById('btn-check-updates'),
   aboutUpdateStatus: document.getElementById('about-update-status'),
@@ -166,6 +168,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAboutInfo();
   setupRealtimeEvents();
   setupAppUpdateEvents();
+  if (state.appInfo && state.appInfo.selfUpdateSupported === false && window.conduitAPI.checkUpdates) {
+    checkForUpdates(false, { background: true });
+  }
 
   // Polling de salud cada 10s
   setInterval(checkDaemonStatus, 10000);
@@ -2803,7 +2808,9 @@ function updatePluginsBadge() {
   }
 
   if (el.btnUpdateAllPlugins) {
-    el.btnUpdateAllPlugins.disabled = !plugins.some(p => Boolean(p.update_available) && !p.managed_externally);
+    el.btnUpdateAllPlugins.disabled = !plugins.some(
+      p => Boolean(p.update_available) && !p.managed_externally && p.compatible !== false
+    );
   }
 }
 
@@ -2856,6 +2863,9 @@ function renderPlugins() {
           ${isInstalled && p.path ? `<p style="font-size:11px;color:var(--text-dim);margin-top:2px;word-break:break-all;">Ruta: ${escapeHTML(p.path)}</p>` : ''}
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">
+            ${p.is_third_party ? 'Third-Party' : 'Official'}
+          </span>
           ${p.is_new ? '<span class="account-status-badge status-badge-new">Nuevo</span>' : ''}
           ${p.update_available && p.latest_version ? `<span class="account-status-badge status-badge-update">Actualización v${escapeHTML(p.latest_version)}</span>` : ''}
           ${isExternal ? '<span class="account-status-badge status-badge-external">Gestionado externamente</span>' : ''}
@@ -2913,9 +2923,11 @@ function renderPlugins() {
         const btnUpdate = document.createElement('button');
         btnUpdate.className = 'btn-card btn-primary btn-update-plugin';
         btnUpdate.innerHTML = `<i class="fa-solid fa-arrow-up"></i> Actualizar${p.latest_version ? ` (v${escapeHTML(p.latest_version)})` : ''}`;
-        btnUpdate.disabled = isExternal;
+        btnUpdate.disabled = isExternal || !isCompatible;
         if (isExternal) {
           btnUpdate.title = 'Este plugin está gestionado externamente y no puede actualizarse desde la GUI.';
+        } else if (!isCompatible) {
+          btnUpdate.title = p.incompatibility_reason || 'Plugin incompatible';
         }
         btnUpdate.addEventListener('click', async () => {
           try {
@@ -3015,18 +3027,40 @@ async function loadAboutInfo() {
     if (el.aboutTuiVersion) {
       el.aboutTuiVersion.textContent = status && status.tui_version ? `v${status.tui_version}` : 'Not installed';
     }
+    if (el.aboutPackaging) {
+      if (appInfo && (appInfo.packagingMode || appInfo.platform)) {
+        const pkg = [appInfo.platform, appInfo.packagingMode].filter(Boolean).join(' / ');
+        el.aboutPackaging.textContent = pkg || '-';
+      } else {
+        el.aboutPackaging.textContent = '-';
+      }
+    }
+    if (el.aboutCheckedAt) {
+      el.aboutCheckedAt.textContent = state.lastUpdateCheckAt
+        ? `Última comprobación: ${state.lastUpdateCheckAt}`
+        : '';
+    }
 
     if (el.aboutPluginsTbody) {
       const installed = (state.plugins || []).filter(p => p.is_installed !== false);
       if (installed.length === 0) {
-        el.aboutPluginsTbody.innerHTML = '<tr><td colspan="3" class="text-muted">Sin plugins instalados</td></tr>';
+        el.aboutPluginsTbody.innerHTML = '<tr><td colspan="6" class="text-muted">Sin plugins instalados</td></tr>';
       } else {
         el.aboutPluginsTbody.innerHTML = installed.map(p => {
           const isEnabled = p.is_enabled !== undefined ? p.is_enabled : Boolean(p.enabled);
           const ver = (p.manifest && p.manifest.version) || p.version || '-';
+          const latestVer = p.latest_version ? `v${escapeHTML(p.latest_version)}` : '-';
+          const sourceLabel = p.is_third_party ? 'Third-Party' : 'Official';
+          const isCompatible = p.compatible !== false;
+          const compatLabel = isCompatible
+            ? 'Compatible'
+            : `Incompatible${p.incompatibility_reason ? `: ${escapeHTML(p.incompatibility_reason)}` : ''}`;
           return `<tr>
             <td>${escapeHTML(p.name || p.id)}</td>
+            <td><span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">${sourceLabel}</span></td>
             <td>v${escapeHTML(ver)}</td>
+            <td>${latestVer}</td>
+            <td>${compatLabel}</td>
             <td>${isEnabled ? 'Habilitado' : 'Deshabilitado'}</td>
           </tr>`;
         }).join('');
@@ -3043,10 +3077,12 @@ function setAboutUpdateBanner(html, visible = true) {
   el.aboutUpdateStatus.classList.toggle('hidden', !visible);
 }
 
-async function checkForUpdates(forceRefresh = true) {
+async function checkForUpdates(forceRefresh = true, { background = false } = {}) {
   try {
-    if (el.btnCheckUpdates) el.btnCheckUpdates.disabled = true;
-    setAboutUpdateBanner('<span>Buscando actualizaciones...</span>', true);
+    if (!background) {
+      if (el.btnCheckUpdates) el.btnCheckUpdates.disabled = true;
+      setAboutUpdateBanner('<span>Buscando actualizaciones...</span>', true);
+    }
 
     const appInfo = state.appInfo || (window.conduitAPI.getAppInfo ? await window.conduitAPI.getAppInfo() : null);
     state.appInfo = appInfo;
@@ -3054,14 +3090,18 @@ async function checkForUpdates(forceRefresh = true) {
     const updatesRes = window.conduitAPI.checkUpdates
       ? await window.conduitAPI.checkUpdates(forceRefresh, appInfo && appInfo.version)
       : null;
+    if (updatesRes) {
+      state.lastUpdateCheckAt = updatesRes.checked_at || new Date().toISOString();
+    }
     if (updatesRes && Array.isArray(updatesRes.plugins)) {
       state.plugins = updatesRes.plugins;
       updatePluginsBadge();
       renderPlugins();
     }
+    await loadAboutInfo();
 
     const parts = [];
-    if (appInfo && appInfo.selfUpdateSupported && window.conduitAPI.checkAppUpdate) {
+    if (!background && appInfo && appInfo.selfUpdateSupported && window.conduitAPI.checkAppUpdate) {
       const appCheck = await window.conduitAPI.checkAppUpdate();
       if (appCheck && appCheck.updateAvailable && appCheck.updateInfo && appCheck.updateInfo.version) {
         parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(appCheck.updateInfo.version)}</strong></span>`);
@@ -3074,7 +3114,7 @@ async function checkForUpdates(forceRefresh = true) {
     } else if (updatesRes && updatesRes.gui_update_available && updatesRes.gui_latest_version && updatesRes.gui_release_url) {
       parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(updatesRes.gui_latest_version)}</strong></span>`);
       parts.push('<button type="button" class="btn-card btn-primary" id="btn-open-gui-release">Ver release en GitHub</button>');
-    } else {
+    } else if (!background) {
       parts.push('<span>GUI actualizada.</span>');
     }
 
@@ -3082,26 +3122,30 @@ async function checkForUpdates(forceRefresh = true) {
       parts.push(`<span>Core v${escapeHTML(updatesRes.core_latest_version)} disponible.</span>`);
     }
 
-    setAboutUpdateBanner(parts.join(' '), true);
+    if (parts.length > 0) {
+      setAboutUpdateBanner(parts.join(' '), true);
+    }
 
     const btnDownload = document.getElementById('btn-download-app-update');
     if (btnDownload && window.conduitAPI.downloadAppUpdate) {
-      btnDownload.addEventListener('click', async () => {
+      btnDownload.onclick = async () => {
         btnDownload.disabled = true;
         await window.conduitAPI.downloadAppUpdate();
-      });
+      };
     }
 
     const btnOpenRelease = document.getElementById('btn-open-gui-release');
     if (btnOpenRelease && updatesRes && updatesRes.gui_release_url && window.conduitAPI.openExternal) {
-      btnOpenRelease.addEventListener('click', () => {
+      btnOpenRelease.onclick = () => {
         window.conduitAPI.openExternal(updatesRes.gui_release_url);
-      });
+      };
     }
   } catch (err) {
-    setAboutUpdateBanner(`<span>Error al buscar actualizaciones: ${escapeHTML(err.message)}</span>`, true);
+    if (!background) {
+      setAboutUpdateBanner(`<span>Error al buscar actualizaciones: ${escapeHTML(err.message)}</span>`, true);
+    }
   } finally {
-    if (el.btnCheckUpdates) el.btnCheckUpdates.disabled = false;
+    if (!background && el.btnCheckUpdates) el.btnCheckUpdates.disabled = false;
   }
 }
 
@@ -3109,7 +3153,20 @@ function setupAppUpdateEvents() {
   if (!window.conduitAPI || !window.conduitAPI.onAppUpdateEvent) return;
   window.conduitAPI.onAppUpdateEvent((evt) => {
     if (!evt || !evt.type) return;
-    if (evt.type === 'download-progress' || evt.type === 'downloading') {
+    if (evt.type === 'update-available') {
+      const ver = evt.version ? `v${escapeHTML(evt.version)}` : '';
+      setAboutUpdateBanner(
+        `<span>Nueva versión de GUI disponible: <strong>${ver}</strong></span> <button type="button" class="btn-card btn-primary" id="btn-download-app-update">Descargar actualización</button>`,
+        true
+      );
+      const btnDownload = document.getElementById('btn-download-app-update');
+      if (btnDownload && window.conduitAPI.downloadAppUpdate) {
+        btnDownload.onclick = async () => {
+          btnDownload.disabled = true;
+          await window.conduitAPI.downloadAppUpdate();
+        };
+      }
+    } else if (evt.type === 'download-progress' || evt.type === 'downloading') {
       const rawPct = typeof evt.percent === 'number'
         ? evt.percent
         : (evt.progress && typeof evt.progress.percent === 'number' ? evt.progress.percent : 0);

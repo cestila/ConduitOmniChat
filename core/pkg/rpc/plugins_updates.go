@@ -94,6 +94,9 @@ func (s *Server) UninstallPlugin(ctx context.Context, req *conduitv1.UninstallPl
 	if s.manifestStore != nil {
 		_ = s.manifestStore.Remove(id)
 	}
+	if s.db != nil {
+		_ = s.db.SetSetting(ctx, fmt.Sprintf("plugin_%s_enabled", id), "")
+	}
 	return &conduitv1.UninstallPluginResponse{
 		Success: true,
 		Message: fmt.Sprintf("Plugin '%s' uninstalled (%s)", id, path),
