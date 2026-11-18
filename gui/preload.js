@@ -29,7 +29,11 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   connectAccount: (accountId) => ipcRenderer.invoke('conduit:connectAccount', accountId),
   disconnectAccount: (accountId) => ipcRenderer.invoke('conduit:disconnectAccount', accountId),
   listPlugins: () => ipcRenderer.invoke('conduit:listPlugins'),
-  installPlugin: (pluginId) => ipcRenderer.invoke('conduit:installPlugin', pluginId),
+  installPlugin: (pluginId, version) => ipcRenderer.invoke('conduit:installPlugin', pluginId, version),
+  uninstallPlugin: (pluginId) => ipcRenderer.invoke('conduit:uninstallPlugin', pluginId),
+  updatePlugin: (pluginId, all) => ipcRenderer.invoke('conduit:updatePlugin', pluginId, all),
+  checkUpdates: (forceRefresh) => ipcRenderer.invoke('conduit:checkUpdates', forceRefresh),
+  markPluginsSeen: (pluginIds) => ipcRenderer.invoke('conduit:markPluginsSeen', pluginIds),
   togglePlugin: (pluginId, enabled) => ipcRenderer.invoke('conduit:togglePlugin', pluginId, enabled),
   listContacts: () => ipcRenderer.invoke('conduit:listContacts'),
   mergeContacts: (primaryId, secondaryId) => ipcRenderer.invoke('conduit:mergeContacts', primaryId, secondaryId),
@@ -58,6 +62,15 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   },
 
   // Notificaciones y Sistema
+  getAppInfo: () => ipcRenderer.invoke('conduit:getAppInfo'),
+  checkAppUpdate: () => ipcRenderer.invoke('conduit:checkAppUpdate'),
+  downloadAppUpdate: () => ipcRenderer.invoke('conduit:downloadAppUpdate'),
+  installAppUpdate: () => ipcRenderer.invoke('conduit:installAppUpdate'),
+  onAppUpdateEvent: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('conduit:appUpdateEvent', handler);
+    return () => ipcRenderer.removeListener('conduit:appUpdateEvent', handler);
+  },
   showNotification: (options) => ipcRenderer.invoke('conduit:showNotification', options),
   flashFrame: (flag) => ipcRenderer.invoke('conduit:flashFrame', flag),
   onOpenConversation: (callback) => {

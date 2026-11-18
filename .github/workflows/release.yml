@@ -81,3 +81,4 @@ jobs:
             gui/dist/*.AppImage
             gui/dist/*.tar.gz
             gui/dist/*.exe
+            gui/dist/latest*.yml

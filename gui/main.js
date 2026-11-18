@@ -6,12 +6,87 @@ const { execFile } = require('child_process');
 const ConduitRpcClient = require('./conduit-client');
 const DaemonManager = require('./daemon-manager');
 const { saveAttachmentAs } = require('./save-attachment');
+const { detectPackagingMode, isPathWritable } = require('./updater-guard');
 
 let mainWindow = null;
 let tray = null;
 let rpcClient = null;
 let daemonManager = null;
 let isQuitting = false;
+let autoUpdaterInstance = null;
+let updateDownloaded = false;
+let startupUpdateTimer = null;
+
+function getAppInfo() {
+  const { packagingMode, selfUpdateSupported } = detectPackagingMode({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    env: process.env,
+    isWritable: isPathWritable
+  });
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    packagingMode,
+    selfUpdateSupported
+  };
+}
+
+function sendAppUpdateEvent(type, data = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('conduit:appUpdateEvent', { type, ...data });
+  }
+}
+
+function setupAutoUpdater() {
+  const info = getAppInfo();
+  if (!info.selfUpdateSupported) {
+    return null;
+  }
+
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    sendAppUpdateEvent('checking-for-update');
+  });
+  autoUpdater.on('update-available', (updateInfo) => {
+    updateDownloaded = false;
+    sendAppUpdateEvent('update-available', {
+      version: updateInfo?.version || '',
+      releaseDate: updateInfo?.releaseDate || '',
+      releaseName: updateInfo?.releaseName || '',
+      releaseNotes: updateInfo?.releaseNotes || ''
+    });
+  });
+  autoUpdater.on('update-not-available', (updateInfo) => {
+    sendAppUpdateEvent('update-not-available', {
+      version: updateInfo?.version || ''
+    });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    sendAppUpdateEvent('download-progress', {
+      percent: progress?.percent || 0,
+      transferred: progress?.transferred || 0,
+      total: progress?.total || 0,
+      bytesPerSecond: progress?.bytesPerSecond || 0
+    });
+  });
+  autoUpdater.on('update-downloaded', (updateInfo) => {
+    updateDownloaded = true;
+    sendAppUpdateEvent('update-downloaded', {
+      version: updateInfo?.version || ''
+    });
+  });
+  autoUpdater.on('error', (err) => {
+    sendAppUpdateEvent('update-error', {
+      message: err?.message || String(err)
+    });
+  });
+
+  return autoUpdater;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -349,12 +424,84 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('conduit:installPlugin', async (_e, pluginId) => {
-    return await rpcClient.installPlugin(pluginId);
+  ipcMain.handle('conduit:installPlugin', async (_e, pluginId, version) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
+    return await rpcClient.installPlugin(pluginId, version);
+  });
+
+  ipcMain.handle('conduit:uninstallPlugin', async (_e, pluginId) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
+    return await rpcClient.uninstallPlugin(pluginId);
+  });
+
+  ipcMain.handle('conduit:updatePlugin', async (_e, pluginId, all) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
+    return await rpcClient.updatePlugin(pluginId, all);
+  });
+
+  ipcMain.handle('conduit:checkUpdates', async (_e, forceRefresh) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
+    return await rpcClient.checkUpdates(forceRefresh);
+  });
+
+  ipcMain.handle('conduit:markPluginsSeen', async (_e, pluginIds) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
+    return await rpcClient.markPluginsSeen(pluginIds);
   });
 
   ipcMain.handle('conduit:togglePlugin', async (_e, pluginId, enabled) => {
+    if (!rpcClient) throw new Error('RPC client not initialized');
     return await rpcClient.togglePlugin(pluginId, enabled);
+  });
+
+  ipcMain.handle('conduit:getAppInfo', async () => {
+    return getAppInfo();
+  });
+
+  ipcMain.handle('conduit:checkAppUpdate', async () => {
+    const info = getAppInfo();
+    if (!autoUpdaterInstance) {
+      return { supported: false, packagingMode: info.packagingMode };
+    }
+    try {
+      const result = await autoUpdaterInstance.checkForUpdates();
+      return {
+        supported: true,
+        updateInfo: result && result.updateInfo
+          ? {
+              version: result.updateInfo.version,
+              releaseDate: result.updateInfo.releaseDate
+            }
+          : null
+      };
+    } catch (err) {
+      return { supported: true, error: err.message };
+    }
+  });
+
+  ipcMain.handle('conduit:downloadAppUpdate', async () => {
+    if (!autoUpdaterInstance) {
+      return { supported: false, started: false };
+    }
+    try {
+      updateDownloaded = false;
+      await autoUpdaterInstance.downloadUpdate();
+      return { supported: true, started: true, downloaded: true };
+    } catch (err) {
+      return { supported: true, started: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('conduit:installAppUpdate', async () => {
+    if (!autoUpdaterInstance) {
+      return { supported: false, installed: false };
+    }
+    if (!updateDownloaded) {
+      return { supported: true, installed: false, error: 'No downloaded update ready to install' };
+    }
+    await cleanupAndQuit();
+    autoUpdaterInstance.quitAndInstall();
+    return { supported: true, installed: true };
   });
 
   ipcMain.handle('conduit:listContacts', async () => {
@@ -421,6 +568,10 @@ function setupIpcHandlers() {
 async function cleanupAndQuit() {
   if (isQuitting) return;
   isQuitting = true;
+  if (startupUpdateTimer) {
+    clearTimeout(startupUpdateTimer);
+    startupUpdateTimer = null;
+  }
   try {
     if (rpcClient) {
       try {
@@ -611,6 +762,19 @@ app.whenReady().then(async () => {
 
   connectGrpc();
   createWindow();
+
+  autoUpdaterInstance = setupAutoUpdater();
+  if (autoUpdaterInstance) {
+    startupUpdateTimer = setTimeout(() => {
+      startupUpdateTimer = null;
+      autoUpdaterInstance.checkForUpdates().catch((err) => {
+        console.warn('[Updater] Background update check failed:', err.message);
+      });
+    }, 5000);
+    if (typeof startupUpdateTimer.unref === 'function') {
+      startupUpdateTimer.unref();
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -239,9 +239,55 @@ class ConduitRpcClient {
     });
   }
 
-  installPlugin(pluginId) {
+  installPlugin(pluginId, version = '') {
     return new Promise((resolve, reject) => {
-      this.client.InstallPlugin({ plugin_id: pluginId }, (err, response) => {
+      this.client.InstallPlugin({
+        plugin_id: pluginId,
+        version: version || ''
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  uninstallPlugin(pluginId) {
+    return new Promise((resolve, reject) => {
+      this.client.UninstallPlugin({ plugin_id: pluginId }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  updatePlugin(pluginId = '', all = false) {
+    return new Promise((resolve, reject) => {
+      this.client.UpdatePlugin({
+        plugin_id: pluginId || '',
+        all: Boolean(all)
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  checkUpdates(forceRefresh = false) {
+    return new Promise((resolve, reject) => {
+      this.client.CheckUpdates({
+        force_refresh: Boolean(forceRefresh)
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  markPluginsSeen(pluginIds = []) {
+    return new Promise((resolve, reject) => {
+      this.client.MarkPluginsSeen({
+        plugin_ids: Array.isArray(pluginIds) ? pluginIds : []
+      }, (err, response) => {
         if (err) return reject(err);
         resolve(response);
       });
