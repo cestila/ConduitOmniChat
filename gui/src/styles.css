@@ -778,6 +778,10 @@ body {
   color: var(--text-dim);
 }
 
+.message-bubble.outgoing .msg-meta {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* Mensaje citado / respuesta */
 .msg-quoted-reply {
   background: rgba(0, 0, 0, 0.2);
@@ -3297,18 +3301,18 @@ body.compact-mode .msg-avatar {
 .msg-status-icon {
   font-size: 10px;
   margin-left: 4px;
-  opacity: 0.75;
+  opacity: 0.9;
 }
 .msg-status-icon.msg-status-read {
-  color: #38bdf8;
+  color: #67e8f9;
   opacity: 1;
 }
 .msg-status-icon.msg-status-failed {
-  color: #ef4444;
+  color: #fca5a5;
   opacity: 1;
 }
 .msg-status-failed-label {
-  color: #ef4444;
+  color: #fca5a5;
   font-size: 10px;
   font-weight: 600;
   margin-left: 3px;
