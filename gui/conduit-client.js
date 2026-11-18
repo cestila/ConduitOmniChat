@@ -364,6 +364,18 @@ class ConduitRpcClient {
     });
   }
 
+  renameContact(contactId, displayName) {
+    return new Promise((resolve, reject) => {
+      this.client.RenameContact({
+        contact_id: contactId,
+        display_name: displayName
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response.contact);
+      });
+    });
+  }
+
   markConversationRead(conversationId) {
     return new Promise((resolve, reject) => {
       this.client.MarkConversationRead({ conversation_id: conversationId }, (err, response) => {

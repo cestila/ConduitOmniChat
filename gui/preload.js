@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('conduitAPI', {
   listContacts: () => ipcRenderer.invoke('conduit:listContacts'),
   syncContacts: (provider, accountId) => ipcRenderer.invoke('conduit:syncContacts', provider, accountId),
   startChat: (contactId, channelId) => ipcRenderer.invoke('conduit:startChat', contactId, channelId),
+  renameContact: (contactId, displayName) => ipcRenderer.invoke('conduit:renameContact', contactId, displayName),
   getSettings: () => ipcRenderer.invoke('conduit:getSettings'),
   updateSettings: (settings) => ipcRenderer.invoke('conduit:updateSettings', settings),
 

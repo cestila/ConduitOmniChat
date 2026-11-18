@@ -534,6 +534,10 @@ function setupIpcHandlers() {
     return await rpcClient.startChat(contactId, channelId || '');
   });
 
+  ipcMain.handle('conduit:renameContact', async (_e, contactId, displayName) => {
+    return await rpcClient.renameContact(contactId, displayName);
+  });
+
   ipcMain.handle('conduit:getSettings', async () => {
     try {
       return await rpcClient.getSettings();

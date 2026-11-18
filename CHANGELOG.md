@@ -21,15 +21,20 @@ listed under an **SDK** heading inside each version.
 - Plugin lifecycle updates and removal: `conduitd plugin check`, `conduitd plugin update [<id>|--all]`, `conduitd plugin remove <id>`, SHA-256 verified hot-updates with best-effort account reconnection, and externally managed plugin guards.
 - Desktop app (`gui`) plugin updates and uninstall UI, dependency/compatibility warnings, custom plugin repository installer, guarded `electron-updater` auto-updates (falling back to release links on portable, `tar.gz`, and Nix packages), and an About view in Settings.
 - CI workflow (`.github/workflows/update-registry.yml`) to keep `registry.json` synced with the latest Core, GUI, and official plugin releases.
+- Real-time outgoing message status updates (`pending`, `sent`, `delivered`, `read`, `failed`) via `EventEnvelope.message_status_updated` and status check icons in the GUI.
+- Plugin/account disconnection detection and live `channel_status_update` banner in the GUI (`channel.disconnected` and `StreamIncomingEvents` stream errors).
+- `RenameContact` RPC and inline chat header rename with `name_locked` protection against resync overwrites, plus `IsLegibleName` preference and phone fallback display for symbol-only PushNames.
 
 ### Fixed
 
 - Desktop app daemon status indicator now reads `core_version` from `GetStatusResponse` instead of referencing an undefined `status.version` field.
 - `checkAppUpdate` IPC handler now consistently returns an `updateAvailable` boolean alongside update details.
+- `Server.SendMessage` no longer leaves outgoing messages stuck in `pending` when the target plugin is not running; it marks them `failed` and publishes `EventMessageStatus`.
+- `gui/src/app.js` no longer hardcodes `fa-check-double` for all outgoing messages.
 
 ### SDK
 
-- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, and `MarkPluginsSeen` RPCs and extended `PluginInfo` and `GetStatusResponse` in `sdk/proto/conduit.proto` (`sdk/conduitv1`).
+- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, `MarkPluginsSeen`, and `RenameContact` RPCs and extended `PluginInfo`, `GetStatusResponse`, `ProtoContact`, `ProtoConversation`, and `EventEnvelope` in `sdk/proto/conduit.proto` (`sdk/conduitv1`).
 
 ## [0.1.2] - 2026-11-17
 

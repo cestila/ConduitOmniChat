@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 	"github.com/cestila/ConduitOmniChat/core/pkg/storage"
@@ -64,11 +65,12 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 		existingChannel.ContactID = contact.ID
 
 		contactUpdated := false
-		// Si se recibe un mejor DisplayName que no sea solo el número de teléfono o ID, actualizarlo
+		// Si el contacto no fue renombrado manualmente, actualizar un DisplayName vacío, ID-like o no legible (solo símbolos/".")
 		trimmedDisplay := strings.Trim(displayName, "'\" \t")
 		trimmedContact := strings.Trim(contact.DisplayName, "'\" \t")
-		if trimmedDisplay != "" && trimmedDisplay != rawRemoteID && trimmedDisplay != normRemoteID {
-			if trimmedContact == "" || trimmedContact == normRemoteID || trimmedContact == rawRemoteID || trimmedContact == strings.Trim(rawRemoteID, "+") || trimmedContact == strings.Trim(normRemoteID, "+") {
+		if !contact.NameLocked && trimmedDisplay != "" && trimmedDisplay != rawRemoteID && trimmedDisplay != normRemoteID {
+			isIDOrEmpty := trimmedContact == "" || trimmedContact == normRemoteID || trimmedContact == rawRemoteID || trimmedContact == strings.Trim(rawRemoteID, "+") || trimmedContact == strings.Trim(normRemoteID, "+")
+			if isIDOrEmpty || (!IsLegibleName(trimmedContact) && IsLegibleName(trimmedDisplay)) {
 				contact.DisplayName = trimmedDisplay
 				contactUpdated = true
 			}
@@ -79,6 +81,9 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 		}
 		if contactUpdated {
 			_ = g.db.SaveContact(ctx, contact)
+			if IsLegibleName(contact.DisplayName) {
+				_ = g.db.UpdateConversationTitleByContact(ctx, contact.ID, contact.DisplayName)
+			}
 		}
 		if handle != "" && existingChannel.Handle == "" {
 			existingChannel.Handle = handle
@@ -394,4 +399,15 @@ func (g *Graph) SplitChannel(ctx context.Context, channelID, newContactName stri
 	}
 
 	return g.db.GetContactByID(ctx, newContactID)
+}
+
+// IsLegibleName devuelve true si el nombre contiene al menos una letra o dígito Unicode
+// (descarta PushNames compuestos solo por puntuación o emojis como "." o "🕷️").
+func IsLegibleName(name string) bool {
+	for _, r := range strings.TrimSpace(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }

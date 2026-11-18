@@ -97,7 +97,15 @@
           <div class="chat-header-info">
             <div class="chat-avatar" id="active-chat-avatar">C</div>
             <div class="chat-header-details">
-              <h2 id="active-chat-title">Selecciona un chat</h2>
+              <div class="chat-title-row">
+                <h2 id="active-chat-title">Selecciona un chat</h2>
+                <button class="icon-btn hidden" id="btn-rename-contact" title="Renombrar contacto"><i class="fa-solid fa-pen"></i></button>
+              </div>
+              <form id="rename-contact-form" class="rename-contact-form hidden">
+                <input type="text" id="rename-contact-input" placeholder="Nuevo nombre del contacto..." maxlength="120" />
+                <button type="submit" class="btn-primary btn-xs">Guardar</button>
+                <button type="button" id="btn-cancel-rename-contact" class="btn-secondary btn-xs">Cancelar</button>
+              </form>
               <span id="active-chat-subtitle" class="chat-subtitle">Listo para comunicar a través de conduitd</span>
             </div>
           </div>
@@ -112,6 +120,12 @@
             <button class="icon-btn" id="btn-chat-info" title="Detalles del Contacto / Graph"><i class="fa-solid fa-circle-info"></i></button>
           </div>
         </header>
+
+        <div id="connection-status-banner" class="connection-status-banner hidden" role="status">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span id="connection-status-text"></span>
+          <button type="button" id="btn-dismiss-connection-banner" class="icon-btn" title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+        </div>
 
         <!-- Barra de Carga Indeterminada para Mensajes y Contactos -->
         <div id="chat-progress-bar" class="chat-progress-bar hidden">

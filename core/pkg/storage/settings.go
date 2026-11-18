@@ -121,6 +121,15 @@ func (d *DB) DeleteAccount(ctx context.Context, id string) error {
 	return err
 }
 
+// UpdateAccountsStatusByProvider actualiza el estado y mensaje de todas las cuentas de un proveedor.
+func (d *DB) UpdateAccountsStatusByProvider(ctx context.Context, provider, status, statusMessage string) error {
+	_, err := d.conn.ExecContext(ctx,
+		`UPDATE accounts SET status = ?, status_message = ?, updated_at = CURRENT_TIMESTAMP WHERE UPPER(provider) = UPPER(?)`,
+		status, statusMessage, provider,
+	)
+	return err
+}
+
 // GetAccountByID obtiene una cuenta por su ID.
 func (d *DB) GetAccountByID(ctx context.Context, id string) (*conduitv1.ProtoAccount, error) {
 	query := "SELECT id, provider, label, identifier, status, COALESCE(qr_code, ''), COALESCE(credentials, ''), COALESCE(status_message, '') FROM accounts WHERE id = ?"
