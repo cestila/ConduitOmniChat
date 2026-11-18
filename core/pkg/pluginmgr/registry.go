@@ -263,7 +263,10 @@ func (s *ManifestStore) Remove(id string) error {
 }
 
 // MergeRemote updates official catalog entries and component releases from reg without
-// overwriting third-party records or losing installed versions on official plugins.
+// overwriting third-party records, losing installed versions on official plugins, or
+// clobbering cached LatestVersion/MinCoreVersion/ReleaseURL metadata with empty fallback
+// values (e.g. from CatalogRegistry()). Callers should normally invoke MergeRemote only
+// when RegistryClient.Fetch reports reachable == true.
 func (s *ManifestStore) MergeRemote(reg *Registry) error {
 	if reg == nil {
 		return nil
@@ -286,7 +289,7 @@ func (s *ManifestStore) MergeRemote(reg *Registry) error {
 	}
 	if reg.UpdatedAt != "" {
 		m.UpdatedAt = reg.UpdatedAt
-	} else {
+	} else if m.UpdatedAt == "" {
 		m.UpdatedAt = now
 	}
 
@@ -298,18 +301,39 @@ func (s *ManifestStore) MergeRemote(reg *Registry) error {
 		if exists && existing.Source == SourceThirdParty {
 			continue
 		}
+		latestVersion := p.LatestVersion
+		if latestVersion == "" {
+			latestVersion = existing.LatestVersion
+		}
+		minCoreVersion := p.MinCoreVersion
+		if minCoreVersion == "" {
+			minCoreVersion = existing.MinCoreVersion
+		}
+		releaseURL := p.ReleaseURL
+		if (p.LatestVersion == "" && existing.LatestVersion != "" && existing.ReleaseURL != "") || releaseURL == "" {
+			releaseURL = existing.ReleaseURL
+		}
+		deps := cloneDependencies(p.Dependencies)
+		if p.LatestVersion == "" && len(deps) == 0 && len(existing.Dependencies) > 0 {
+			deps = cloneDependencies(existing.Dependencies)
+		}
+		lastCheckedAt := existing.LastCheckedAt
+		if p.LatestVersion != "" || lastCheckedAt == "" {
+			lastCheckedAt = now
+		}
+
 		rec := LocalPluginRecord{
 			ID:                 p.ID,
 			Repository:         p.Repository,
 			Source:             SourceOfficial,
 			InstalledVersion:   existing.InstalledVersion,
-			LatestVersion:      p.LatestVersion,
-			MinCoreVersion:     p.MinCoreVersion,
-			ReleaseURL:         p.ReleaseURL,
-			LastCheckedAt:      now,
+			LatestVersion:      latestVersion,
+			MinCoreVersion:     minCoreVersion,
+			ReleaseURL:         releaseURL,
+			LastCheckedAt:      lastCheckedAt,
 			MinProtocolVersion: p.MinProtocolVersion,
 			MaxProtocolVersion: p.MaxProtocolVersion,
-			Dependencies:       cloneDependencies(p.Dependencies),
+			Dependencies:       deps,
 		}
 		m.Plugins[p.ID] = rec
 	}
@@ -395,8 +419,10 @@ func CatalogRegistry() *Registry {
 }
 
 // Fetch retrieves the remote registry, serving from TTL cache unless force is true.
-// When the remote registry is unreachable or fails, Fetch sets reachable=false and
-// falls back to the last cached registry or the embedded Catalog without panicking.
+// When the remote registry is unreachable or fails, Fetch returns a non-nil fallback
+// *Registry (the last cached registry or CatalogRegistry()), reachable=false, and a
+// non-nil error describing the transport/HTTP/decode failure so callers can log the
+// cause while still falling back gracefully without failing the user operation.
 func (c *RegistryClient) Fetch(ctx context.Context, force bool) (*Registry, bool, error) {
 	c.mu.Lock()
 	if !force && c.cached != nil && c.now().Sub(c.fetchedAt) < c.ttl {

@@ -109,6 +109,22 @@ func TestManifestStoreSaveLoadAndMergeRemote(t *testing.T) {
 	if _, exists := afterRemove.Plugins["custom"]; exists {
 		t.Fatal("expected custom plugin to be removed")
 	}
+
+	// Merging a fallback CatalogRegistry() must not clobber cached remote metadata on official records.
+	if err := store.MergeRemote(CatalogRegistry()); err != nil {
+		t.Fatalf("MergeRemote(CatalogRegistry()) error: %v", err)
+	}
+	afterFallbackMerge, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() after fallback merge error: %v", err)
+	}
+	tgAfter := afterFallbackMerge.Plugins["telegram"]
+	if tgAfter.LatestVersion != "0.1.2" || tgAfter.MinCoreVersion != "0.1.0" || tgAfter.ReleaseURL != "https://example.com/tg" || len(tgAfter.Dependencies) != 1 {
+		t.Fatalf("CatalogRegistry() clobbered cached official metadata: %+v", tgAfter)
+	}
+	if afterFallbackMerge.UpdatedAt != afterRemove.UpdatedAt {
+		t.Fatalf("CatalogRegistry() clobbered manifest UpdatedAt: got %q, want %q", afterFallbackMerge.UpdatedAt, afterRemove.UpdatedAt)
+	}
 }
 
 func TestRegistryClientFetchCacheForceAndOfflineFallback(t *testing.T) {
@@ -166,9 +182,9 @@ func TestRegistryClientFetchCacheForceAndOfflineFallback(t *testing.T) {
 
 	// 4. HTTP 500 with force=true returns reachable=false and falls back to cached registry without panicking.
 	statusCode.Store(http.StatusInternalServerError)
-	fallback, reachable, _ := client.Fetch(ctx, true)
-	if reachable {
-		t.Fatal("expected reachable=false on HTTP 500")
+	fallback, reachable, err := client.Fetch(ctx, true)
+	if reachable || err == nil {
+		t.Fatalf("expected reachable=false and diagnostic err on HTTP 500, got reachable=%v err=%v", reachable, err)
 	}
 	if fallback == nil || len(fallback.Plugins) == 0 {
 		t.Fatalf("expected non-empty fallback registry on HTTP 500, got %+v", fallback)
@@ -176,9 +192,9 @@ func TestRegistryClientFetchCacheForceAndOfflineFallback(t *testing.T) {
 
 	// 5. Fresh client on HTTP 500 falls back to embedded Catalog without panicking.
 	freshClient := NewRegistryClient(srv.URL, srv.URL, 10*time.Minute)
-	catalogFallback, reachable, _ := freshClient.Fetch(ctx, false)
-	if reachable {
-		t.Fatal("expected reachable=false for fresh client on HTTP 500")
+	catalogFallback, reachable, err := freshClient.Fetch(ctx, false)
+	if reachable || err == nil {
+		t.Fatalf("expected reachable=false and diagnostic err for fresh client on HTTP 500, got reachable=%v err=%v", reachable, err)
 	}
 	if catalogFallback == nil || len(catalogFallback.Plugins) != len(Catalog) {
 		t.Fatalf("expected fallback from embedded Catalog (%d entries), got %+v", len(Catalog), catalogFallback)
@@ -196,9 +212,9 @@ func TestRegistryClientFetchCacheForceAndOfflineFallback(t *testing.T) {
 	timeoutClient := NewRegistryClient(slowSrv.URL, slowSrv.URL, time.Minute)
 	shortCtx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	timeoutFallback, reachable, _ := timeoutClient.Fetch(shortCtx, false)
-	if reachable {
-		t.Fatal("expected reachable=false on timeout")
+	timeoutFallback, reachable, err := timeoutClient.Fetch(shortCtx, false)
+	if reachable || err == nil {
+		t.Fatalf("expected reachable=false and diagnostic err on timeout, got reachable=%v err=%v", reachable, err)
 	}
 	if timeoutFallback == nil || len(timeoutFallback.Plugins) != len(Catalog) {
 		t.Fatalf("expected catalog fallback on timeout, got %+v", timeoutFallback)

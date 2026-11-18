@@ -169,7 +169,13 @@ func CheckCompatibility(entry RegistryPlugin, coreVersion string, protoVersion u
 
 	coreVer := strings.TrimSpace(coreVersion)
 	if coreVer != "" && coreVer != "dev" && entry.MinCoreVersion != "" {
-		if _, ok := parseSemver(coreVer); ok && CompareSemver(coreVer, entry.MinCoreVersion) < 0 {
+		if _, ok := parseSemver(entry.MinCoreVersion); !ok {
+			return false, fmt.Sprintf("Invalid minimum core version requirement %q", entry.MinCoreVersion)
+		}
+		if _, ok := parseSemver(coreVer); !ok {
+			return false, fmt.Sprintf("Requires Conduit Core >= v%s (current %s)", strings.TrimPrefix(entry.MinCoreVersion, "v"), coreVer)
+		}
+		if CompareSemver(coreVer, entry.MinCoreVersion) < 0 {
 			return false, fmt.Sprintf("Requires Conduit Core >= v%s (current %s)", strings.TrimPrefix(entry.MinCoreVersion, "v"), coreVer)
 		}
 	}
@@ -182,8 +188,16 @@ func CheckCompatibility(entry RegistryPlugin, coreVersion string, protoVersion u
 			}
 			return false, fmt.Sprintf("Missing required plugin %q", dep.PluginID)
 		}
-		if dep.MinVersion != "" && installed != "dev" && CompareSemver(installed, dep.MinVersion) < 0 {
-			return false, fmt.Sprintf("Requires plugin %q >= v%s (installed %s)", dep.PluginID, strings.TrimPrefix(dep.MinVersion, "v"), installed)
+		if dep.MinVersion != "" && installed != "dev" {
+			if _, ok := parseSemver(dep.MinVersion); !ok {
+				return false, fmt.Sprintf("Plugin %q has invalid minimum version requirement %q", dep.PluginID, dep.MinVersion)
+			}
+			if _, ok := parseSemver(installed); !ok {
+				return false, fmt.Sprintf("Requires plugin %q >= v%s (installed %s)", dep.PluginID, strings.TrimPrefix(dep.MinVersion, "v"), installed)
+			}
+			if CompareSemver(installed, dep.MinVersion) < 0 {
+				return false, fmt.Sprintf("Requires plugin %q >= v%s (installed %s)", dep.PluginID, strings.TrimPrefix(dep.MinVersion, "v"), installed)
+			}
 		}
 	}
 

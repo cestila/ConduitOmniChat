@@ -143,6 +143,64 @@ func TestCheckCompatibility(t *testing.T) {
 			wantOK:            false,
 			wantReasonSubstr:  "whatsapp",
 		},
+		{
+			name: "non-semver dependency installed version does not falsely pass",
+			entry: RegistryPlugin{
+				ID:                 "custom",
+				MinProtocolVersion: 1,
+				MaxProtocolVersion: 1,
+				Dependencies: []PluginDependency{
+					{PluginID: "whatsapp", MinVersion: "0.1.0"},
+				},
+			},
+			coreVersion:       "0.2.0",
+			protoVersion:      1,
+			installedVersions: map[string]string{"whatsapp": "unknown"},
+			wantOK:            false,
+			wantReasonSubstr:  "whatsapp",
+		},
+		{
+			name: "non-semver dependency min_version fails",
+			entry: RegistryPlugin{
+				ID:                 "custom",
+				MinProtocolVersion: 1,
+				MaxProtocolVersion: 1,
+				Dependencies: []PluginDependency{
+					{PluginID: "whatsapp", MinVersion: "not-a-version"},
+				},
+			},
+			coreVersion:       "0.2.0",
+			protoVersion:      1,
+			installedVersions: map[string]string{"whatsapp": "0.2.0"},
+			wantOK:            false,
+			wantReasonSubstr:  "whatsapp",
+		},
+		{
+			name: "non-semver min_core_version fails",
+			entry: RegistryPlugin{
+				ID:                 "whatsapp",
+				MinProtocolVersion: 1,
+				MaxProtocolVersion: 1,
+				MinCoreVersion:     "invalid-core-bound",
+			},
+			coreVersion:      "0.2.0",
+			protoVersion:     1,
+			wantOK:           false,
+			wantReasonSubstr: "invalid",
+		},
+		{
+			name: "non-semver non-dev coreVersion fails when min_core_version set",
+			entry: RegistryPlugin{
+				ID:                 "whatsapp",
+				MinProtocolVersion: 1,
+				MaxProtocolVersion: 1,
+				MinCoreVersion:     "0.1.0",
+			},
+			coreVersion:      "unknown",
+			protoVersion:     1,
+			wantOK:           false,
+			wantReasonSubstr: "0.1.0",
+		},
 	}
 
 	for _, tt := range tests {
