@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 	"github.com/cestila/ConduitOmniChat/core/pkg/storage"
@@ -13,6 +15,7 @@ import (
 
 // Graph coordina la vinculación, resolución, fusión y desacople de identidades multicanal.
 type Graph struct {
+	mu sync.Mutex
 	db *storage.DB
 }
 
@@ -32,19 +35,22 @@ type Hints struct {
 // ResolveOrLinkChannel busca un contacto existente con el remoteID normalizado o crea uno nuevo.
 // El teléfono y el email canónicos mandan sobre el identificador del proveedor: si la
 // identidad ya pertenece a otro contacto, ambos se fusionan en el dueño de la identidad.
-func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provider, rawRemoteID, handle, displayName, avatarURL string, hints Hints) (*domain.Contact, *domain.ContactChannel, error) {
+func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provider, accountID, rawRemoteID, handle, displayName, avatarURL string, hints Hints) (*domain.Contact, *domain.ContactChannel, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	normRemoteID := NormalizeIdentifier(rawRemoteID)
 
 	identifierEmail := NormalizeEmail(rawRemoteID)
 	identifierPhone := PhoneFromIdentifier(rawRemoteID)
 	handleEmail := NormalizeEmail(handle)
 	hintEmail := NormalizeEmail(hints.Email)
-	hintPhone := PhoneFromIdentifier(hints.Phone)
+	hintPhone := NormalizePhone(hints.Phone)
 	canonicalEmail := firstNonEmpty(hintEmail, identifierEmail)
 	canonicalPhone := firstNonEmpty(hintPhone, identifierPhone)
 
 	// 1. Buscar si el canal ya está registrado
-	existingChannel, err := g.db.GetChannelByProviderAndRemoteID(ctx, string(provider), normRemoteID)
+	existingChannel, err := g.db.GetChannelByProviderAccountAndRemoteID(ctx, string(provider), accountID, normRemoteID)
 	if err == nil && existingChannel != nil {
 		contact, err := g.db.GetContactByID(ctx, existingChannel.ContactID)
 		if err != nil {
@@ -59,21 +65,25 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 		existingChannel.ContactID = contact.ID
 
 		contactUpdated := false
-		// Si se recibe un mejor DisplayName que no sea solo el número de teléfono o ID, actualizarlo
+		// Si el contacto no fue renombrado manualmente, actualizar un DisplayName vacío, ID-like o no legible (solo símbolos/".")
 		trimmedDisplay := strings.Trim(displayName, "'\" \t")
 		trimmedContact := strings.Trim(contact.DisplayName, "'\" \t")
-		if trimmedDisplay != "" && trimmedDisplay != rawRemoteID && trimmedDisplay != normRemoteID {
-			if trimmedContact == "" || trimmedContact == normRemoteID || trimmedContact == rawRemoteID || trimmedContact == strings.Trim(rawRemoteID, "+") || trimmedContact == strings.Trim(normRemoteID, "+") {
+		if !contact.NameLocked && trimmedDisplay != "" && trimmedDisplay != rawRemoteID && trimmedDisplay != normRemoteID {
+			isIDOrEmpty := trimmedContact == "" || trimmedContact == normRemoteID || trimmedContact == rawRemoteID || trimmedContact == strings.Trim(rawRemoteID, "+") || trimmedContact == strings.Trim(normRemoteID, "+")
+			if isIDOrEmpty || (!IsLegibleName(trimmedContact) && IsLegibleName(trimmedDisplay)) {
 				contact.DisplayName = trimmedDisplay
 				contactUpdated = true
 			}
 		}
-		if avatarURL != "" && contact.AvatarURL == "" {
+		if avatarURL != "" && avatarURL != contact.AvatarURL {
 			contact.AvatarURL = avatarURL
 			contactUpdated = true
 		}
 		if contactUpdated {
 			_ = g.db.SaveContact(ctx, contact)
+			if IsLegibleName(contact.DisplayName) {
+				_ = g.db.UpdateConversationTitleByContact(ctx, contact.ID, contact.DisplayName)
+			}
 		}
 		if handle != "" && existingChannel.Handle == "" {
 			existingChannel.Handle = handle
@@ -116,7 +126,7 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 				c.Phone = canonicalPhone
 				changed = true
 			}
-			if avatarURL != "" && c.AvatarURL == "" {
+			if avatarURL != "" && avatarURL != c.AvatarURL {
 				c.AvatarURL = avatarURL
 				changed = true
 			}
@@ -132,6 +142,7 @@ func (g *Graph) ResolveOrLinkChannel(ctx context.Context, provider domain.Provid
 		ID:          uuid.New().String(),
 		ContactID:   contactID,
 		Provider:    provider,
+		AccountID:   accountID,
 		RemoteID:    normRemoteID,
 		Handle:      handle,
 		IsPreferred: false,
@@ -388,4 +399,15 @@ func (g *Graph) SplitChannel(ctx context.Context, channelID, newContactName stri
 	}
 
 	return g.db.GetContactByID(ctx, newContactID)
+}
+
+// IsLegibleName devuelve true si el nombre contiene al menos una letra o dígito Unicode
+// (descarta PushNames compuestos solo por puntuación o emojis como "." o "🕷️").
+func IsLegibleName(name string) bool {
+	for _, r := range strings.TrimSpace(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }

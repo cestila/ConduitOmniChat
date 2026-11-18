@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestIdentityGraphAutoMatchingAndMergeSplit(t *testing.T) {
 	graph := NewGraph(db)
 
 	// 1. Vincular canal WhatsApp (+54 9 11 1234-5678)
-	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "+54 9 11 1234-5678", "+5491112345678", "Martín Gómez", "https://avatar.url/martin.jpg", Hints{})
+	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+54 9 11 1234-5678", "+5491112345678", "Martín Gómez", "https://avatar.url/martin.jpg", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto WA: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestIdentityGraphAutoMatchingAndMergeSplit(t *testing.T) {
 	}
 
 	// 2. Vincular canal Telegram con el mismo número telefónico (debería auto-emparejar al mismo contacto c1)
-	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "5491112345678", "@martingomez", "Martín Telegram", "", Hints{})
+	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "5491112345678", "@martingomez", "Martín Telegram", "", Hints{})
 	if err != nil {
 		t.Fatalf("error emparejando canal TG: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestIdentityGraphAutoMatchingAndMergeSplit(t *testing.T) {
 	}
 
 	// 3. Crear otro contacto separado (ej. Discord)
-	c3, ch3, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-999", "marting#1234", "Martín DC", "", Hints{})
+	c3, ch3, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-999", "marting#1234", "Martín DC", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto DC: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestSetContactIdentityNormalizesAndPersists(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	c, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "someone#1", "Someone", "", Hints{})
+	c, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "someone#1", "Someone", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestAutoLinkByEmailAndPhoneAcrossProviders(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	base, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "someone#1", "Someone", "", Hints{})
+	base, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "someone#1", "Someone", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto base: %v", err)
 	}
@@ -131,7 +132,7 @@ func TestAutoLinkByEmailAndPhoneAcrossProviders(t *testing.T) {
 	}
 
 	// Canal de otro proveedor cuyo identificador es el mismo teléfono.
-	byPhone, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "+54 9 11 5555-0000", "", "Someone WA", "", Hints{})
+	byPhone, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+54 9 11 5555-0000", "", "Someone WA", "", Hints{})
 	if err != nil {
 		t.Fatalf("error vinculando canal por teléfono: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestAutoLinkByEmailAndPhoneAcrossProviders(t *testing.T) {
 	}
 
 	// Canal de otro proveedor cuyo handle es el mismo email.
-	byEmail, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "tg-user-77", "someone@example.com", "Someone TG", "", Hints{})
+	byEmail, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "tg-user-77", "someone@example.com", "Someone TG", "", Hints{})
 	if err != nil {
 		t.Fatalf("error vinculando canal por email: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestSetContactIdentityRejectsDuplicateEmail(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	first, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "one#1", "One", "", Hints{})
+	first, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "one#1", "One", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando primer contacto: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestSetContactIdentityRejectsDuplicateEmail(t *testing.T) {
 		t.Fatalf("error asignando email al primero: %v", err)
 	}
 
-	second, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-2", "two#1", "Two", "", Hints{})
+	second, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-2", "two#1", "Two", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando segundo contacto: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestSetContactIdentityRejectsDuplicatePhone(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	first, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "one#1", "One", "", Hints{})
+	first, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "one#1", "One", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando primer contacto: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestSetContactIdentityRejectsDuplicatePhone(t *testing.T) {
 		t.Fatalf("error asignando teléfono al primero: %v", err)
 	}
 
-	second, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-2", "two#1", "Two", "", Hints{})
+	second, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-2", "two#1", "Two", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando segundo contacto: %v", err)
 	}
@@ -212,7 +213,7 @@ func TestFindContactsByIdentity(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	target, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "one#1", "One", "", Hints{})
+	target, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "one#1", "One", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto: %v", err)
 	}
@@ -220,7 +221,7 @@ func TestFindContactsByIdentity(t *testing.T) {
 		t.Fatalf("error asignando identidad: %v", err)
 	}
 
-	other, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-2", "two#1", "Two", "", Hints{})
+	other, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-2", "two#1", "Two", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando otro contacto: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestLatePhoneHintMergesExistingContacts(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	wa, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "5491100003333@s.whatsapp.net", "", "Persona WA", "", Hints{})
+	wa, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "5491100003333@s.whatsapp.net", "", "Persona WA", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto WhatsApp: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestLatePhoneHintMergesExistingContacts(t *testing.T) {
 		t.Fatalf("el contacto de WhatsApp debió quedar con teléfono, obtuvo %q", wa.Phone)
 	}
 
-	tg, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "u7001", "persona", "Persona TG", "", Hints{})
+	tg, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "u7001", "persona", "Persona TG", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto Telegram: %v", err)
 	}
@@ -269,7 +270,7 @@ func TestLatePhoneHintMergesExistingContacts(t *testing.T) {
 		t.Fatalf("los contactos no debieron unirse todavía")
 	}
 
-	linked, channel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "u7001", "persona", "Persona TG", "", Hints{Phone: "+54 9 11 0000-3333"})
+	linked, channel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "u7001", "persona", "Persona TG", "", Hints{Phone: "+54 9 11 0000-3333"})
 	if err != nil {
 		t.Fatalf("error uniendo identidad tardía: %v", err)
 	}
@@ -297,12 +298,12 @@ func TestPhoneHintLinksNewChannelToExistingContact(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	wa, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "5491100004444@s.whatsapp.net", "", "Persona WA", "", Hints{})
+	wa, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "5491100004444@s.whatsapp.net", "", "Persona WA", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto WhatsApp: %v", err)
 	}
 
-	tg, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "u8001", "persona", "Persona TG", "", Hints{Phone: "+5491100004444"})
+	tg, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "u8001", "persona", "Persona TG", "", Hints{Phone: "+5491100004444"})
 	if err != nil {
 		t.Fatalf("error enlazando canal por teléfono: %v", err)
 	}
@@ -316,7 +317,7 @@ func TestEmailHintLinksChannelToExistingContact(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	base, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "discord-user-1", "someone#1", "Someone", "", Hints{})
+	base, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderDiscord, "", "discord-user-1", "someone#1", "Someone", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto base: %v", err)
 	}
@@ -324,7 +325,7 @@ func TestEmailHintLinksChannelToExistingContact(t *testing.T) {
 		t.Fatalf("error asignando email: %v", err)
 	}
 
-	linked, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderGmail, "gmail-user-1", "", "Someone Gmail", "", Hints{Email: "  Someone@Example.COM "})
+	linked, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderGmail, "", "gmail-user-1", "", "Someone Gmail", "", Hints{Email: "  Someone@Example.COM "})
 	if err != nil {
 		t.Fatalf("error enlazando canal por email: %v", err)
 	}
@@ -339,11 +340,11 @@ func TestMergeContactsConsolidatesConversations(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	primary, primaryChannel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "5491100005555@s.whatsapp.net", "", "Persona WA", "", Hints{})
+	primary, primaryChannel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "5491100005555@s.whatsapp.net", "", "Persona WA", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto WhatsApp: %v", err)
 	}
-	secondary, secondaryChannel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "u9001", "persona", "Persona TG", "", Hints{})
+	secondary, secondaryChannel, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "", "u9001", "persona", "Persona TG", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto Telegram: %v", err)
 	}
@@ -426,11 +427,168 @@ func TestNewChannelWithEmailIdentifierSetsContactEmail(t *testing.T) {
 	ctx := context.Background()
 	graph := newTestGraph(t)
 
-	c, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderGmail, "nuevo@example.com", "nuevo@example.com", "Nuevo Contacto", "", Hints{})
+	c, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderGmail, "", "nuevo@example.com", "nuevo@example.com", "Nuevo Contacto", "", Hints{})
 	if err != nil {
 		t.Fatalf("error creando contacto por email: %v", err)
 	}
 	if c.Email != "nuevo@example.com" {
 		t.Fatalf("se esperaba email 'nuevo@example.com' en el contacto, obtuvo '%s'", c.Email)
+	}
+}
+
+func TestResolveOrLinkChannelUpdatesAvatarURL(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "5491155556666@s.whatsapp.net", "", "Ana", "https://cdn.example.com/old.jpg", Hints{})
+	if err != nil {
+		t.Fatalf("error creando contacto: %v", err)
+	}
+	if c1.AvatarURL != "https://cdn.example.com/old.jpg" {
+		t.Fatalf("esperaba avatar inicial, obtuvo %q", c1.AvatarURL)
+	}
+
+	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "5491155556666@s.whatsapp.net", "", "Ana", "https://cdn.example.com/new.jpg", Hints{})
+	if err != nil {
+		t.Fatalf("error actualizando avatar: %v", err)
+	}
+	if c2.AvatarURL != "https://cdn.example.com/new.jpg" {
+		t.Fatalf("esperaba avatar actualizado %q, obtuvo %q", "https://cdn.example.com/new.jpg", c2.AvatarURL)
+	}
+}
+
+func TestResolveOrLinkChannelUnifiesTelegramNoPlusWithWhatsApp(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	wa, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "wa-1", "5491112345678@s.whatsapp.net", "", "Martín WA", "", Hints{})
+	if err != nil {
+		t.Fatalf("error resolviendo WA: %v", err)
+	}
+
+	tg, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "tg-1", "u999", "martin", "Martín TG", "", Hints{Phone: "5491112345678"})
+	if err != nil {
+		t.Fatalf("error resolviendo TG: %v", err)
+	}
+
+	if wa.ID != tg.ID {
+		t.Fatalf("se esperaba que WA (%s) y TG (%s) compartan el mismo Contact.ID", wa.ID, tg.ID)
+	}
+	if tg.Phone != "+5491112345678" {
+		t.Fatalf("se esperaba Phone +5491112345678, obtuvo %q", tg.Phone)
+	}
+}
+
+func TestResolveOrLinkChannelMultipleLocalAccountsSameProvider(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	c1, ch1, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "wa-work", "5491112345678@s.whatsapp.net", "", "Martín", "", Hints{})
+	if err != nil {
+		t.Fatalf("error resolviendo wa-work: %v", err)
+	}
+
+	c2, ch2, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "wa-personal", "5491112345678@s.whatsapp.net", "", "Martín", "", Hints{})
+	if err != nil {
+		t.Fatalf("error resolviendo wa-personal: %v", err)
+	}
+
+	if c1.ID != c2.ID {
+		t.Fatalf("se esperaba el mismo Contact.ID para ambas cuentas, obtuvo %s vs %s", c1.ID, c2.ID)
+	}
+	if ch1.ID == ch2.ID {
+		t.Fatalf("se esperaban dos ContactChannel distintos, ambos tienen ID %s", ch1.ID)
+	}
+	if ch1.AccountID != "wa-work" || ch2.AccountID != "wa-personal" {
+		t.Fatalf("accountIDs inesperados: ch1=%q, ch2=%q", ch1.AccountID, ch2.AccountID)
+	}
+	if len(c2.Channels) != 2 {
+		t.Fatalf("se esperaban 2 canales en el contacto unificado, obtuvo %d", len(c2.Channels))
+	}
+}
+
+func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
+	ctx := context.Background()
+	graph := newTestGraph(t)
+
+	const workers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	contactIDs := make(chan string, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			var c *domain.Contact
+			var err error
+			if idx%2 == 0 {
+				c, _, err = graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "wa-1", "5491112345678@s.whatsapp.net", "", "Martín", "", Hints{})
+			} else {
+				c, _, err = graph.ResolveOrLinkChannel(ctx, domain.ProviderTelegram, "tg-1", "u999", "martin", "Martín TG", "", Hints{Phone: "+5491112345678"})
+			}
+			if err != nil {
+				errs <- err
+				return
+			}
+			contactIDs <- c.ID
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	close(contactIDs)
+
+	for err := range errs {
+		t.Fatalf("concurrent ResolveOrLinkChannel failed: %v", err)
+	}
+	var firstID string
+	for id := range contactIDs {
+		if firstID == "" {
+			firstID = id
+		} else if id != firstID {
+			t.Fatalf("expected unified contact ID %s, got %s", firstID, id)
+		}
+	}
+}
+
+func TestResolveOrLinkChannelLegibleNameAndNameLocked(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legible.db")
+	db, err := storage.NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	graph := NewGraph(db)
+
+	// 1. Initial sync arrives with symbol-only PushName "."
+	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", ".", "", Hints{})
+	if err != nil {
+		t.Fatalf("ResolveOrLinkChannel initial: %v", err)
+	}
+	if c1.DisplayName != "." {
+		t.Fatalf("expected '.', got %q", c1.DisplayName)
+	}
+
+	// 2. Subsequent sync with legible name overwrites "."
+	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", "Maximiliano Collado", "", Hints{})
+	if err != nil {
+		t.Fatalf("ResolveOrLinkChannel legible: %v", err)
+	}
+	if c2.DisplayName != "Maximiliano Collado" {
+		t.Fatalf("expected legible overwrite 'Maximiliano Collado', got %q", c2.DisplayName)
+	}
+
+	// 3. Manual rename sets NameLocked = true; later sync must NOT overwrite
+	if _, err := db.RenameContact(ctx, c2.ID, "Maxi Trabajo"); err != nil {
+		t.Fatalf("RenameContact: %v", err)
+	}
+	c3, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", "Otro Nombre Sync", "", Hints{})
+	if err != nil {
+		t.Fatalf("ResolveOrLinkChannel after lock: %v", err)
+	}
+	if c3.DisplayName != "Maxi Trabajo" {
+		t.Fatalf("expected locked name 'Maxi Trabajo' preserved, got %q", c3.DisplayName)
 	}
 }

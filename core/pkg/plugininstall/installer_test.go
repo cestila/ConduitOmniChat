@@ -295,3 +295,209 @@ func TestRemove(t *testing.T) {
 		t.Fatal("id inválido debe fallar")
 	}
 }
+
+func TestInstallerIsManagedPath(t *testing.T) {
+	pluginDir := filepath.Join(t.TempDir(), "plugins")
+	tests := []struct {
+		name       string
+		pluginDir  string
+		binaryPath string
+		want       bool
+	}{
+		{
+			name:       "direct child in PluginDir",
+			pluginDir:  pluginDir,
+			binaryPath: filepath.Join(pluginDir, "conduit-plugin-foo"),
+			want:       true,
+		},
+		{
+			name:       "unclean PluginDir with trailing separator",
+			pluginDir:  pluginDir + string(filepath.Separator),
+			binaryPath: filepath.Join(pluginDir, ".", "conduit-plugin-foo"),
+			want:       true,
+		},
+		{
+			name:       "nix store path",
+			pluginDir:  pluginDir,
+			binaryPath: "/nix/store/00000000000000000000000000000000-conduit-plugin-foo/bin/conduit-plugin-foo",
+			want:       false,
+		},
+		{
+			name:       "nested subdirectory inside PluginDir",
+			pluginDir:  pluginDir,
+			binaryPath: filepath.Join(pluginDir, "nested", "conduit-plugin-foo"),
+			want:       false,
+		},
+		{
+			name:       "parent directory of PluginDir",
+			pluginDir:  pluginDir,
+			binaryPath: filepath.Join(filepath.Dir(pluginDir), "conduit-plugin-foo"),
+			want:       false,
+		},
+		{
+			name:       "empty binary path",
+			pluginDir:  pluginDir,
+			binaryPath: "",
+			want:       false,
+		},
+		{
+			name:       "empty plugin dir",
+			pluginDir:  "",
+			binaryPath: filepath.Join(pluginDir, "conduit-plugin-foo"),
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := New(tt.pluginDir)
+			if got := in.IsManagedPath(tt.binaryPath); got != tt.want {
+				t.Fatalf("IsManagedPath(%q) with PluginDir=%q = %v, want %v", tt.binaryPath, tt.pluginDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstallerPrepareUpdateChecksumMismatchPreservesExistingBinary(t *testing.T) {
+	f := &fakeRelease{
+		t:       t,
+		repo:    "cestila/conduit-plugin-discord",
+		tag:     "v1.0.0",
+		archive: makeTarGz(t, entry{name: "conduit-plugin-discord", body: "NEW"}),
+	}
+	f.checksums = func(name string, _ []byte) string {
+		return strings.Repeat("0", 64) + "  " + name + "\n"
+	}
+	in := f.start()
+	if err := os.MkdirAll(in.PluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(in.PluginDir, "conduit-plugin-discord")
+	if err := os.WriteFile(oldPath, []byte("OLD"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prep, err := in.PrepareUpdate(t.Context(), "cestila/conduit-plugin-discord", "")
+	if err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("expected checksum error, got prep=%v err=%v", prep, err)
+	}
+	if prep != nil {
+		t.Fatalf("expected nil PreparedInstall on error, got %+v", prep)
+	}
+	got, err := os.ReadFile(oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "OLD" {
+		t.Fatalf("existing binary modified: got %q, want %q", got, "OLD")
+	}
+	if names := dirNames(t, in.PluginDir); len(names) != 1 || names[0] != "conduit-plugin-discord" {
+		t.Fatalf("unexpected files in PluginDir: %v", names)
+	}
+}
+
+func TestInstallerPrepareUpdateDoesNotTouchPluginDirUntilCommit(t *testing.T) {
+	f := &fakeRelease{
+		t:       t,
+		repo:    "cestila/conduit-plugin-discord",
+		tag:     "v2.0.0",
+		archive: makeTarGz(t, entry{name: "conduit-plugin-discord", body: "NEW_V2"}),
+	}
+	in := f.start()
+
+	// Do not pre-create in.PluginDir; PrepareUpdate must not create or write into it.
+	prep, err := in.PrepareUpdate(t.Context(), "cestila/conduit-plugin-discord", "v2.0.0")
+	if err != nil {
+		t.Fatalf("PrepareUpdate failed: %v", err)
+	}
+	defer prep.Cleanup()
+
+	if _, err := os.Stat(in.PluginDir); !os.IsNotExist(err) {
+		t.Fatalf("PrepareUpdate touched PluginDir before Commit: stat err = %v", err)
+	}
+
+	res, err := prep.Commit()
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+	wantPath := filepath.Join(in.PluginDir, "conduit-plugin-discord")
+	if res.ID != "discord" || res.Version != "v2.0.0" || res.Path != wantPath {
+		t.Fatalf("Commit result = %+v, want ID=discord Version=v2.0.0 Path=%s", res, wantPath)
+	}
+	got, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "NEW_V2" {
+		t.Fatalf("installed binary = %q, want %q", got, "NEW_V2")
+	}
+	if st, err := os.Stat(wantPath); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("installed binary mode = %v, err = %v", st.Mode().Perm(), err)
+	}
+	if names := dirNames(t, in.PluginDir); len(names) != 1 {
+		t.Fatalf("unexpected files in PluginDir after Commit: %v", names)
+	}
+}
+
+func TestInstallerPrepareUpdateCleanupDiscardsWithoutCommit(t *testing.T) {
+	f := &fakeRelease{
+		t:       t,
+		repo:    "cestila/conduit-plugin-discord",
+		tag:     "v2.0.0",
+		archive: makeTarGz(t, entry{name: "conduit-plugin-discord", body: "NEW_V2"}),
+	}
+	in := f.start()
+
+	prep, err := in.PrepareUpdate(t.Context(), "cestila/conduit-plugin-discord", "")
+	if err != nil {
+		t.Fatalf("PrepareUpdate failed: %v", err)
+	}
+	prep.Cleanup()
+	// Idempotent second Cleanup call.
+	prep.Cleanup()
+
+	if _, err := os.Stat(in.PluginDir); !os.IsNotExist(err) {
+		t.Fatalf("PluginDir should not exist after Cleanup without Commit: %v", err)
+	}
+	if _, err := prep.Commit(); err == nil {
+		t.Fatal("Commit after Cleanup must fail")
+	}
+}
+
+func TestInstallerPrepareUpdateReplacesExistingBinaryOnCommit(t *testing.T) {
+	f := &fakeRelease{
+		t:       t,
+		repo:    "cestila/conduit-plugin-discord",
+		tag:     "v2.1.0",
+		archive: makeTarGz(t, entry{name: "conduit-plugin-discord", body: "NEW_V21"}),
+	}
+	in := f.start()
+	if err := os.MkdirAll(in.PluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(in.PluginDir, "conduit-plugin-discord")
+	if err := os.WriteFile(existing, []byte("OLD_V1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prep, err := in.PrepareUpdate(t.Context(), "cestila/conduit-plugin-discord", "")
+	if err != nil {
+		t.Fatalf("PrepareUpdate failed: %v", err)
+	}
+	defer prep.Cleanup()
+
+	if got, _ := os.ReadFile(existing); string(got) != "OLD_V1" {
+		t.Fatalf("existing binary changed before Commit: %q", got)
+	}
+
+	res, err := prep.Commit()
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+	if res.Version != "v2.1.0" || res.Path != existing {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if got, _ := os.ReadFile(existing); string(got) != "NEW_V21" {
+		t.Fatalf("existing binary not replaced on Commit: %q", got)
+	}
+}

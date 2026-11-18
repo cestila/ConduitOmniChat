@@ -28,6 +28,9 @@ service ConduitService {
   rpc ListContacts(ListContactsRequest) returns (ListContactsResponse);
   rpc MergeContacts(MergeContactsRequest) returns (MergeContactsResponse);
   rpc SplitChannel(SplitChannelRequest) returns (SplitChannelResponse);
+  rpc SyncContacts(SyncContactsRequest) returns (SyncContactsResponse);
+  rpc StartChat(StartChatRequest) returns (StartChatResponse);
+  rpc RenameContact(RenameContactRequest) returns (RenameContactResponse);
 
   // Identidad canónica por email y teléfono (enlace entre proveedores)
   rpc SetContactIdentity(SetContactIdentityRequest) returns (SetContactIdentityResponse);
@@ -44,6 +47,10 @@ service ConduitService {
   rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
   rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
   rpc TogglePlugin(TogglePluginRequest) returns (TogglePluginResponse);
+  rpc UninstallPlugin(UninstallPluginRequest) returns (UninstallPluginResponse);
+  rpc UpdatePlugin(UpdatePluginRequest) returns (UpdatePluginResponse);
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse);
+  rpc MarkPluginsSeen(MarkPluginsSeenRequest) returns (MarkPluginsSeenResponse);
 
   // Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
@@ -80,6 +87,7 @@ service PluginService {
   rpc SendOutgoingMessage(OutgoingMessageRequest) returns (OutgoingMessageResponse);
   rpc StreamIncomingEvents(PluginStreamRequest) returns (stream PluginEvent);
   rpc SyncChatHistory(SyncChatHistoryRequest) returns (SyncChatHistoryResponse);
+  rpc SyncContacts(SyncContactsRequest) returns (PluginSyncContactsResponse);
   rpc SendReaction(PluginReactionRequest) returns (PluginReactionResponse);
   rpc SendVote(PluginVoteRequest) returns (PluginVoteResponse);
   rpc ClickButton(PluginClickButtonRequest) returns (PluginClickButtonResponse);
@@ -159,6 +167,7 @@ message ProtoContact {
   repeated ProtoChannel channels = 4;
   string email = 5;  // Identidad canónica normalizada (minúsculas)
   string phone = 6;  // Identidad canónica normalizada (E.164)
+  bool name_locked = 8; // true cuando el usuario renombró manualmente el contacto
 }
 
 message ProtoChannel {
@@ -171,6 +180,7 @@ message ProtoChannel {
   string server_id = 7;
   string parent_channel_id = 8;
   string channel_type = 9; // 'text', 'voice', 'announcement', 'forum', 'dm', 'group'
+  string account_id = 10;
 }
 
 message ProtoConversation {
@@ -189,6 +199,7 @@ message ProtoConversation {
   string avatar_url = 13;           // URL de imagen / avatar del contacto o grupo
   int32 position = 14;              // Orden en que el servidor publica el canal (0 = desconocido)
   string provider = 15;             // Proveedor del canal activo: 'whatsapp', 'telegram', 'discord'
+  string contact_phone = 16;        // Teléfono/identificador legible de respaldo cuando el título no es legible
 }
 
 message ProtoAttachment {
@@ -311,7 +322,26 @@ message EventEnvelope {
     ProtoMessage message_updated = 6;
     string message_deleted = 7; // ID local del mensaje eliminado
     ConversationReadEvent conversation_read = 8; // Notificación de conversación / mensajes leídos
+    ContactUpdatedEvent contact_updated = 9;
+    MessageStatusEvent message_status_updated = 10; // Cambio de estado saliente (pending/sent/delivered/read/failed)
   }
+}
+
+message MessageStatusEvent {
+  string message_id = 1;
+  string conversation_id = 2;
+  string status = 3; // pending | sent | delivered | read | failed
+  string remote_message_id = 4;
+  string error = 5;
+}
+
+message RenameContactRequest {
+  string contact_id = 1;
+  string display_name = 2;
+}
+
+message RenameContactResponse {
+  ProtoContact contact = 1;
 }
 
 message ConversationReadEvent {
@@ -319,6 +349,10 @@ message ConversationReadEvent {
   repeated string remote_message_ids = 2;
   string max_remote_id = 3;
   int32 unread_count = 4; // No leídos que quedan en la conversación tras aplicar la lectura
+}
+
+message ContactUpdatedEvent {
+  ProtoContact contact = 1;
 }
 
 message ListConversationsRequest {
@@ -399,12 +433,48 @@ message FindContactsByIdentityResponse {
   repeated ProtoContact contacts = 1;
 }
 
+message SyncContactsRequest {
+  string provider = 1;
+  string account_id = 2;
+}
+
+message SyncContactsResponse {
+  int32 synced_count = 1;
+  int32 unified_count = 2;
+}
+
+message PluginContact {
+  string account_id = 1;
+  string remote_id = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  string phone = 5;
+  string email = 6;
+  string handle = 7;
+}
+
+message PluginSyncContactsResponse {
+  repeated PluginContact contacts = 1;
+  string error = 2;
+}
+
+message StartChatRequest {
+  string contact_id = 1;
+  string channel_id = 2;
+}
+
+message StartChatResponse {
+  ProtoConversation conversation = 1;
+}
+
 message GetStatusRequest {}
 
 message GetStatusResponse {
   string core_version = 1;
   int64 uptime_seconds = 2;
   map<string, string> channel_statuses = 3;
+  uint32 protocol_version = 4;
+  string tui_version = 5;
 }
 
 // ProviderCredentials agrupa las credenciales que cada proveedor real necesita.
@@ -566,6 +636,15 @@ message ProtoPluginInfo {
   PluginManifest manifest = 8; // set when the plugin is installed and running
   string repository = 9;       // GitHub owner/repo used by the installer
   string path = 10;            // binary path when installed
+  string latest_version = 11;
+  bool update_available = 12;
+  bool is_new = 13;
+  bool compatible = 14;
+  string incompatibility_reason = 15;
+  bool managed_externally = 16;
+  bool is_third_party = 17;
+  string release_url = 18;
+  repeated string dependencies = 19;
 }
 
 message ListPluginsRequest {}
@@ -576,6 +655,7 @@ message ListPluginsResponse {
 
 message InstallPluginRequest {
   string plugin_id = 1;
+  string version = 2; // optional: specific release tag/version; empty installs latest
 }
 
 message InstallPluginResponse {
@@ -589,6 +669,61 @@ message TogglePluginRequest {
 }
 
 message TogglePluginResponse {
+  bool success = 1;
+}
+
+message UninstallPluginRequest {
+  string plugin_id = 1;
+}
+
+message UninstallPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UpdatePluginRequest {
+  string plugin_id = 1;
+  bool all = 2;
+}
+
+message PluginUpdateResult {
+  string plugin_id = 1;
+  bool success = 2;
+  string message = 3;
+  string from_version = 4;
+  string to_version = 5;
+}
+
+message UpdatePluginResponse {
+  bool success = 1;
+  string message = 2;
+  repeated PluginUpdateResult results = 3;
+}
+
+message CheckUpdatesRequest {
+  bool force_refresh = 1;
+  string gui_version = 2;
+}
+
+message CheckUpdatesResponse {
+  bool registry_reachable = 1;
+  string core_latest_version = 2;
+  string core_release_url = 3;
+  bool core_update_available = 4;
+  string gui_latest_version = 5;
+  string gui_release_url = 6;
+  bool gui_update_available = 7;
+  repeated ProtoPluginInfo plugins = 8;
+  int32 updates_available_count = 9;
+  int32 new_plugins_count = 10;
+  string checked_at = 11;
+}
+
+message MarkPluginsSeenRequest {
+  repeated string plugin_ids = 1; // optional: empty marks all current catalog plugins as seen
+}
+
+message MarkPluginsSeenResponse {
   bool success = 1;
 }
 

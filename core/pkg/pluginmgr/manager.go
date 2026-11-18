@@ -190,6 +190,18 @@ func (m *Manager) GetInstance(name string) (*Instance, bool) {
 	return inst, ok
 }
 
+// ListInstances returns all active plugin instances sorted by name.
+func (m *Manager) ListInstances() []*Instance {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*Instance, 0, len(m.plugins))
+	for _, inst := range m.plugins {
+		out = append(out, inst)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // Stop detiene un plugin en ejecución de forma segura.
 func (m *Manager) Stop(name string) {
 	m.mu.Lock()
@@ -201,6 +213,22 @@ func (m *Manager) Stop(name string) {
 		}
 		delete(m.plugins, name)
 	}
+}
+
+// StopPlugin kills a running plugin if present and removes it from both active
+// and disabled registries. Calling it for an unknown id is a no-op.
+func (m *Manager) StopPlugin(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if inst, exists := m.plugins[id]; exists {
+		if inst.Client != nil {
+			inst.Client.Kill()
+		}
+		delete(m.plugins, id)
+	}
+	delete(m.disabled, id)
+	return nil
 }
 
 // StopAll finaliza todos los plugins activos.

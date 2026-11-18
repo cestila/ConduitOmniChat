@@ -102,3 +102,18 @@ func canonicalPhoneDigits(input string) string {
 	}
 	return "+" + digits
 }
+
+// NormalizePhone normaliza un número de teléfono a formato E.164 (+<dígitos>).
+// Acepta formatos internacionales (+..., 00..., @s.whatsapp.net) vía PhoneFromIdentifier
+// y también cadenas de dígitos de 8 a 15 caracteres sin prefijo '+' (ej. teléfonos
+// reportados por Telegram como "5491112345678").
+func NormalizePhone(raw string) string {
+	if p := PhoneFromIdentifier(raw); p != "" {
+		return p
+	}
+	cleaned := strings.TrimSpace(raw)
+	if cleaned == "" || strings.Contains(cleaned, "@") {
+		return ""
+	}
+	return canonicalPhoneDigits(cleaned)
+}

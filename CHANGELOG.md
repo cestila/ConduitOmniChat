@@ -14,6 +14,31 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
+### Added
+
+- Build-time version injection (`core/pkg/buildinfo`), `conduitd version`, and `GetStatusResponse` version/protocol reporting (`core_version`, `protocol_version`, `tui_version`).
+- Remote plugin and application registry (`registry.json`), local manifest tracking (`plugins-manifest.json`), compatibility/dependency checks, and third-party `owner/conduit-plugin-<id>` installation.
+- Plugin lifecycle updates and removal: `conduitd plugin check`, `conduitd plugin update [<id>|--all]`, `conduitd plugin remove <id>`, SHA-256 verified hot-updates with best-effort account reconnection, and externally managed plugin guards.
+- Desktop app (`gui`) plugin updates and uninstall UI, dependency/compatibility warnings, custom plugin repository installer, guarded `electron-updater` auto-updates (falling back to release links on portable, `tar.gz`, and Nix packages), and an About view in Settings.
+- CI workflow (`.github/workflows/update-registry.yml`) to keep `registry.json` synced with the latest Core, GUI, and official plugin releases.
+- Real-time outgoing message status updates (`pending`, `sent`, `delivered`, `read`, `failed`) via `EventEnvelope.message_status_updated` and status check icons in the GUI.
+- Plugin/account disconnection detection and live `channel_status_update` banner in the GUI (`channel.disconnected` and `StreamIncomingEvents` stream errors).
+- `RenameContact` RPC and inline chat header rename with `name_locked` protection against resync overwrites, plus `IsLegibleName` preference and phone fallback display for symbol-only PushNames.
+- Multi-account contact unification and `SyncContacts` / `StartChat` RPCs with live `ContactUpdatedEvent` updates and sync progress indicator.
+
+### Fixed
+
+- Desktop app daemon status indicator now reads `core_version` from `GetStatusResponse` instead of referencing an undefined `status.version` field.
+- `checkAppUpdate` IPC handler now consistently returns an `updateAvailable` boolean alongside update details.
+- `Server.SendMessage` no longer leaves outgoing messages stuck in `pending` when the target plugin is not running; it marks them `failed` and publishes `EventMessageStatus`.
+- `gui/src/app.js` no longer hardcodes `fa-check-double` for all outgoing messages.
+
+### SDK
+
+- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, `MarkPluginsSeen`, `SyncContacts`, `StartChat`, and `RenameContact` RPCs and extended `PluginInfo`, `GetStatusResponse`, `ProtoContact`, `ProtoConversation`, and `EventEnvelope` in `sdk/proto/conduit.proto` (`sdk/conduitv1`, `sdk/v0.2.0`).
+
 ## [0.1.2] - 2026-11-17
 
 ### Added
@@ -69,7 +94,8 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.0

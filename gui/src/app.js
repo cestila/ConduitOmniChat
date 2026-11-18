@@ -43,6 +43,11 @@ const el = {
   pinnedMessageBanner: document.getElementById('pinned-message-banner'),
   pinnedBannerText: document.getElementById('pinned-banner-text'),
   pinnedBannerContent: document.getElementById('pinned-banner-content'),
+  syncProgressModal: document.getElementById('sync-progress-modal'),
+  syncProgressBar: document.getElementById('sync-progress-bar'),
+  syncProgressCount: document.getElementById('sync-progress-count'),
+  syncProgressDetail: document.getElementById('sync-progress-detail'),
+  syncProgressClose: document.getElementById('sync-progress-close'),
   btnUnpinBanner: document.getElementById('btn-unpin-banner'),
   messageInput: document.getElementById('message-input'),
   btnSend: document.getElementById('btn-send-message'),
@@ -91,30 +96,28 @@ const el = {
   btnSettingRestartDaemon: document.getElementById('btn-setting-restart-daemon'),
   btnSettingRestartApp: document.getElementById('btn-setting-restart-app'),
 
-  // Contactos Unificados
-  contactsGrid: document.getElementById('contacts-grid'),
-  mergeContactsBox: document.getElementById('merge-contacts-box'),
-  btnShowMergeModal: document.getElementById('btn-show-merge-modal'),
-  btnCancelMerge: document.getElementById('btn-cancel-merge'),
-  btnSubmitMerge: document.getElementById('btn-submit-merge'),
-  mergePrimarySelect: document.getElementById('merge-primary-select'),
-  mergeSecondarySelect: document.getElementById('merge-secondary-select'),
+  // Plugins & Updates & About
+  pluginsUpdateBadge: document.getElementById('plugins-update-badge'),
+  btnCheckPluginUpdates: document.getElementById('btn-check-plugin-updates'),
+  btnUpdateAllPlugins: document.getElementById('btn-update-all-plugins'),
+  pluginCustomRepoInput: document.getElementById('plugin-custom-repo-input'),
+  btnInstallCustomPlugin: document.getElementById('btn-install-custom-plugin'),
+  pluginsActionFeedback: document.getElementById('plugins-action-feedback'),
+  aboutGuiVersion: document.getElementById('about-gui-version'),
+  aboutCoreVersion: document.getElementById('about-core-version'),
+  aboutSdkProtocol: document.getElementById('about-sdk-protocol'),
+  aboutTuiVersion: document.getElementById('about-tui-version'),
+  aboutPackaging: document.getElementById('about-packaging'),
+  aboutCheckedAt: document.getElementById('about-checked-at'),
+  aboutPluginsTbody: document.getElementById('about-plugins-tbody'),
+  btnCheckUpdates: document.getElementById('btn-check-updates'),
+  aboutUpdateStatus: document.getElementById('about-update-status'),
 
-  // Identidad canónica (email / teléfono)
-  identitySetBox: document.getElementById('identity-set-box'),
-  identityLinkBox: document.getElementById('identity-link-box'),
-  identityContactSelect: document.getElementById('identity-contact-select'),
-  identityEmailInput: document.getElementById('identity-email-input'),
-  identityPhoneInput: document.getElementById('identity-phone-input'),
-  btnShowIdentityModal: document.getElementById('btn-show-identity-modal'),
-  btnCancelIdentity: document.getElementById('btn-cancel-identity'),
-  btnSaveIdentity: document.getElementById('btn-save-identity'),
-  identityQueryInput: document.getElementById('identity-query-input'),
-  identityTargetSelect: document.getElementById('identity-target-select'),
-  identityResults: document.getElementById('identity-results'),
-  btnShowLinkIdentityModal: document.getElementById('btn-show-link-identity-modal'),
-  btnCancelLinkIdentity: document.getElementById('btn-cancel-link-identity'),
-  btnFindIdentity: document.getElementById('btn-find-identity'),
+  // Contactos Unificados
+  contactsList: document.getElementById('contacts-list'),
+  contactsSearchInput: document.getElementById('contacts-search-input'),
+  btnSyncContacts: document.getElementById('btn-sync-contacts'),
+  contactsSyncStatus: document.getElementById('contacts-sync-status'),
 
   // Alta de cuenta y credenciales por proveedor
   newAccountProvider: document.getElementById('new-account-provider'),
@@ -148,7 +151,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConversations();
   await loadContacts();
   await loadAccounts();
+  await loadAboutInfo();
   setupRealtimeEvents();
+  setupAppUpdateEvents();
+  if (state.appInfo && state.appInfo.selfUpdateSupported === false && window.conduitAPI.checkUpdates) {
+    checkForUpdates(false, { background: true });
+  }
 
   // Polling de salud cada 10s
   setInterval(checkDaemonStatus, 10000);
@@ -164,8 +172,10 @@ async function checkDaemonStatus() {
     }
 
     if (status && !status.error) {
+      state.daemonStatus = status;
+      const coreVer = status.core_version || '1.0';
       el.daemonStatusIndicator.querySelector('.status-dot').className = 'status-dot online';
-      const mode = (daemonInfo && daemonInfo.isOwned) ? `Sidecar [PID ${daemonInfo.pid}]` : `v${status.version || '1.0'}`;
+      const mode = (daemonInfo && daemonInfo.isOwned) ? `Sidecar [PID ${daemonInfo.pid}]` : `v${coreVer}`;
       el.daemonStatusText.textContent = `conduitd ${mode} OK`;
 
       if (el.settingDaemonInfoText) {
@@ -174,7 +184,7 @@ async function checkDaemonStatus() {
         } else if (daemonInfo && daemonInfo.isRunning) {
           el.settingDaemonInfoText.textContent = `Conectado a demonio externo en 127.0.0.1:${daemonInfo.port || 50051}.`;
         } else {
-          el.settingDaemonInfoText.textContent = `En línea (v${status.version || '1.0'}).`;
+          el.settingDaemonInfoText.textContent = `En línea (v${coreVer}).`;
         }
       }
     } else {
@@ -225,8 +235,8 @@ function renderConversations() {
     list = list.filter(c => providerKindOf(c) === state.activeFilter);
   }
 
-  // Comprobar si hubo cambios reales en orden, previews o unread_counts antes de tocar el DOM
-  const currentHash = list.map(c => `${c.id}:${c.last_message_at_unix}:${c.unread_count}:${c.last_message_preview}`).join('|') + `|filter:${state.activeFilter}|srv:${state.activeServerId}|active:${state.activeConversationId}`;
+  // Comprobar si hubo cambios reales en orden, previews, títulos o unread_counts antes de tocar el DOM
+  const currentHash = list.map(c => `${c.id}:${c.title}:${c.contact_phone || ''}:${c.last_message_at_unix}:${c.unread_count}:${c.last_message_preview}`).join('|') + `|filter:${state.activeFilter}|srv:${state.activeServerId}|active:${state.activeConversationId}`;
   if (currentHash === state.lastConversationsHash) {
     return; // Nada ha cambiado, evitamos reescribir el DOM para que no haya micro-congelamientos
   }
@@ -661,6 +671,67 @@ function closeServer() {
   renderConversations();
 }
 
+function isLegibleName(name) {
+  return /[\p{L}\p{N}]/u.test(String(name || ''));
+}
+
+function formatConversationTitle(conv) {
+  if (!conv) return 'Conversación';
+  const raw = (conv.title || '').trim();
+  if (isLegibleName(raw)) return raw;
+  const phone = (conv.contact_phone || '').trim();
+  if (phone) {
+    return raw ? `${raw} (${phone})` : phone;
+  }
+  return raw || 'Conversación';
+}
+
+function renderMessageStatusIcon(status, errorMsg) {
+  const s = String(status || 'sent').toLowerCase();
+  if (s === 'pending') {
+    return `<i class="fa-regular fa-clock msg-status-icon msg-status-pending" data-msg-status="pending" title="Pendiente de envío"></i>`;
+  }
+  if (s === 'sent') {
+    return `<i class="fa-solid fa-check msg-status-icon msg-status-sent" data-msg-status="sent" title="Enviado"></i>`;
+  }
+  if (s === 'delivered') {
+    return `<i class="fa-solid fa-check-double msg-status-icon msg-status-delivered" data-msg-status="delivered" title="Recibido"></i>`;
+  }
+  if (s === 'read') {
+    return `<i class="fa-solid fa-check-double msg-status-icon msg-status-read" data-msg-status="read" title="Leído"></i>`;
+  }
+  if (s === 'failed') {
+    const tip = errorMsg ? `No enviado: ${errorMsg}` : 'No enviado';
+    return `<i class="fa-solid fa-circle-exclamation msg-status-icon msg-status-failed" data-msg-status="failed" title="${escapeHTML(tip)}"></i><span class="msg-status-failed-label">No enviado</span>`;
+  }
+  return `<i class="fa-solid fa-check msg-status-icon msg-status-sent" data-msg-status="sent" title="Enviado"></i>`;
+}
+
+function showConnectionBanner(message) {
+  const banner = document.getElementById('connection-status-banner');
+  const text = document.getElementById('connection-status-text');
+  if (!banner || !text) return;
+  text.textContent = message;
+  banner.classList.remove('hidden');
+}
+
+function hideConnectionBanner() {
+  const banner = document.getElementById('connection-status-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function updateMessageBubbleStatus(msgId, newStatus, errorMsg) {
+  if (!msgId || !el.messagesContainer) return;
+  const row = el.messagesContainer.querySelector(`[data-msg-id="${msgId}"]`);
+  const meta = row && row.querySelector('.msg-meta');
+  if (meta && typeof meta.insertAdjacentHTML === 'function') {
+    meta.querySelectorAll('.msg-status-icon, .msg-status-failed-label').forEach(node => node.remove());
+    meta.insertAdjacentHTML('beforeend', renderMessageStatusIcon(newStatus, errorMsg));
+    return;
+  }
+  scheduleActiveConversationRender();
+}
+
 function renderChannelItem(conv, isSubchannel) {
   const item = document.createElement('div');
   item.className = `conversation-item ${isSubchannel ? 'is-subchannel' : ''} ${conv.id === state.activeConversationId ? 'active' : ''}`;
@@ -678,8 +749,9 @@ function renderChannelItem(conv, isSubchannel) {
   const provStyle = providerBadgeStyleAttr(provInfo);
   const channelPrefix = channelTypePrefix(provInfo.id, conv);
 
+  const displayTitle = formatConversationTitle(conv);
   const fallbackIcon = conv.channel_type === 'voice' ? '🔊' : (conv.channel_type === 'text' ? '#' : '');
-  const avatarContent = getAvatarHTML(conv.avatar_url, conv.title || 'Conversación', fallbackIcon);
+  const avatarContent = getAvatarHTML(conv.avatar_url, displayTitle, fallbackIcon);
 
   item.innerHTML = `
     <div class="conv-avatar">
@@ -688,7 +760,7 @@ function renderChannelItem(conv, isSubchannel) {
     </div>
     <div class="conv-content">
       <div class="conv-header-row">
-        <div class="conv-title">${channelPrefix}${escapeHTML(conv.title || 'Conversación')}</div>
+        <div class="conv-title">${channelPrefix}${escapeHTML(displayTitle)}</div>
         <div class="conv-time">${timeStr}</div>
       </div>
       <div class="conv-preview-row">
@@ -882,10 +954,19 @@ async function selectConversation(convId) {
 
   const conv = state.conversations.find(c => c.id === convId);
   if (conv) {
-    el.activeChatTitle.textContent = conv.title || 'Conversación';
+    const displayTitle = formatConversationTitle(conv);
+    el.activeChatTitle.textContent = displayTitle;
     const fallbackIcon = conv.channel_type === 'voice' ? '🔊' : (conv.channel_type === 'text' ? '#' : '');
-    el.activeChatAvatar.innerHTML = getAvatarHTML(conv.avatar_url, conv.title || 'Conversación', fallbackIcon);
-    el.activeChatSubtitle.textContent = `ID: ${conv.id.substring(0, 8)}... | Activo en conduitd`;
+    el.activeChatAvatar.innerHTML = getAvatarHTML(conv.avatar_url, displayTitle, fallbackIcon);
+    el.activeChatSubtitle.textContent = conv.contact_phone && isLegibleName(conv.title)
+      ? `${conv.contact_phone} | Activo en conduitd`
+      : `ID: ${conv.id.substring(0, 8)}... | Activo en conduitd`;
+    const btnRename = document.getElementById('btn-rename-contact');
+    const renameForm = document.getElementById('rename-contact-form');
+    if (renameForm) renameForm.classList.add('hidden');
+    if (btnRename) {
+      btnRename.classList.toggle('hidden', Boolean(conv.is_group || !conv.contact_id));
+    }
   }
   updateChannelSelector(conv);
 
@@ -1153,7 +1234,8 @@ function appendMessageBubble(msg) {
   // Avatar e inicial
   let msgAvatarHTML = '';
   if (isOutgoing) {
-    const myAccount = state.accounts[0];
+    const convProvider = currentConv ? providerKindOf(currentConv) : '';
+    const myAccount = (convProvider && state.accounts.find(a => String(a.provider || '').toLowerCase() === convProvider)) || state.accounts[0];
     const myName = (myAccount && (myAccount.label || myAccount.identifier)) ? (myAccount.label || myAccount.identifier) : 'YO';
     let myAvatar = '';
     const myContact = findMyAccountContact(myAccount);
@@ -1250,12 +1332,25 @@ function appendMessageBubble(msg) {
     `;
   }
 
-  // Renderizar Tarjeta de Video Social (YouTube, TikTok, Instagram)
+  // Renderizar Tarjeta de Video Social (YouTube, TikTok, Instagram) o Vista Previa de Enlace
   let socialVideoHTML = '';
+  let linkPreviewHTML = '';
+  let pendingLinkPreviewUrl = '';
   if (msg.body && !msg.poll && !msg.location && !msg.shared_contact) {
     const social = parseSocialVideoLink(msg.body);
     if (social) {
       socialVideoHTML = renderSocialVideoCardHTML(social);
+    } else {
+      const firstUrl = extractFirstHttpUrl(msg.body);
+      if (firstUrl) {
+        if (linkPreviewCache.has(firstUrl)) {
+          const cached = linkPreviewCache.get(firstUrl);
+          if (cached) linkPreviewHTML = renderLinkPreviewCardHTML(cached);
+        } else {
+          linkPreviewHTML = `<div class="link-preview-slot" data-preview-url="${escapeHTML(firstUrl)}"></div>`;
+          pendingLinkPreviewUrl = firstUrl;
+        }
+      }
     }
   }
 
@@ -1314,13 +1409,14 @@ function appendMessageBubble(msg) {
       ${locationHTML}
       ${contactCardHTML}
       ${pollHTML}
-      ${msg.body && !msg.poll && !msg.location && !msg.shared_contact ? `<div class="msg-body ${isJumbo ? 'emoji-jumbo' : ''}">${escapeHTML(msg.body)}</div>` : ''}
+      ${msg.body && !msg.poll && !msg.location && !msg.shared_contact ? `<div class="msg-body ${isJumbo ? 'emoji-jumbo' : ''}">${linkifyMessageBody(msg.body)}</div>` : ''}
       ${socialVideoHTML}
+      ${linkPreviewHTML}
       ${buttonsHTML}
       <div class="msg-meta">
         <span>${timeStr}</span>
         ${msg.is_edited ? '<span class="msg-edited-badge">(editado)</span>' : ''}
-        ${isOutgoing ? `<i class="fa-solid fa-check-double" style="font-size:10px;"></i>` : ''}
+        ${isOutgoing ? renderMessageStatusIcon(msg.status, msg.error) : ''}
       </div>
       ${reactionsHTML}
     </div>
@@ -1330,6 +1426,10 @@ function appendMessageBubble(msg) {
     row.innerHTML = bubbleHTML + avatarHTML;
   } else {
     row.innerHTML = avatarHTML + bubbleHTML;
+  }
+
+  if (pendingLinkPreviewUrl) {
+    loadLinkPreviewIntoRow(row, pendingLinkPreviewUrl);
   }
 
   // Asignar listeners interactivos a la burbuja
@@ -1898,7 +1998,7 @@ function updateMessageInDOM(updatedMsg) {
   }
   applyAttachmentsToRow(updatedMsg.id || (row.dataset ? row.dataset.msgId : ''), updatedMsg.attachments);
   const bodyEl = row.querySelector('.msg-body');
-  if (bodyEl) bodyEl.textContent = updatedMsg.body || '';
+  if (bodyEl) bodyEl.innerHTML = linkifyMessageBody(updatedMsg.body || '');
   const metaEl = row.querySelector('.msg-meta');
   if (metaEl && updatedMsg.is_edited && !metaEl.querySelector('.msg-edited-badge')) {
     const badge = document.createElement('span');
@@ -1909,7 +2009,7 @@ function updateMessageInDOM(updatedMsg) {
   // En entornos simulados donde el DOM no parsea hijos reales en row.innerHTML:
   if (row._html) {
     if (updatedMsg.body !== undefined) {
-      row._html = row._html.replace(/<div class="msg-body[^"]*">[\s\S]*?<\/div>/, `<div class="msg-body">${escapeHTML(updatedMsg.body || '')}</div>`);
+      row._html = row._html.replace(/<div class="msg-body[^"]*">[\s\S]*?<\/div>/, `<div class="msg-body">${linkifyMessageBody(updatedMsg.body || '')}</div>`);
     }
     if (updatedMsg.is_edited && !row._html.includes('msg-edited-badge')) {
       row._html = row._html.replace(/<div class="msg-meta">/, `<div class="msg-meta"><span class="msg-edited-badge">(editado)</span>`);
@@ -2162,6 +2262,9 @@ async function handleSendMessage() {
       }
       appendMessageBubble(sentMsg);
       scrollMessagesToBottom();
+      if (sentMsg.status === 'failed') {
+        showConnectionBanner('No se pudo enviar el mensaje (plugin desconectado o sin respuesta).');
+      }
 
       // Mover inmediatamente la conversación al top de la lista
       const conv = state.conversations.find(c => c.id === state.activeConversationId);
@@ -2184,22 +2287,53 @@ async function handleSendMessage() {
 // Busca en el Identity Graph el contacto asociado a una cuenta del usuario
 function findMyAccountContact(acc) {
   if (!state.contacts || state.contacts.length === 0) return null;
-  const cleanIdent = (acc && acc.identifier ? acc.identifier : '').replace(/[^0-9]/g, '');
+  const rawIdent = (acc && acc.identifier ? String(acc.identifier) : '').trim();
+  const cleanIdent = rawIdent.replace(/[^0-9]/g, '');
   const digits = cleanIdent.length >= 7 ? cleanIdent.slice(-7) : cleanIdent;
+  const normIdent = rawIdent.replace(/^@/, '').toLowerCase();
+  const normLabel = (acc && acc.label ? String(acc.label) : '').trim().toLowerCase();
+  const provider = acc && acc.provider ? String(acc.provider).toLowerCase() : '';
 
-  return state.contacts.find(c => {
-    if (c.channels && c.channels.length > 0) {
-      if (digits && c.channels.some(ch => (ch.remote_id || '').replace(/[^0-9]/g, '').includes(digits))) {
-        return true;
+  let best = null;
+  let bestScore = 0;
+
+  for (const c of state.contacts) {
+    let score = 0;
+    const channels = c.channels || [];
+    const hasProvider = provider && channels.some(ch => String(ch.provider || '').toLowerCase() === provider);
+
+    if (digits) {
+      const phoneDigits = (c.phone || '').replace(/[^0-9]/g, '');
+      const chanDigitsMatch = channels.some(ch => (ch.remote_id || '').replace(/[^0-9]/g, '').includes(digits));
+      if ((phoneDigits && phoneDigits.includes(digits)) || chanDigitsMatch) {
+        score += 10;
       }
     }
-    return false;
-  }) || state.contacts.find(c => {
-    if (!c.display_name) return false;
-    const dn = c.display_name.toLowerCase();
-    const l = (acc && acc.label ? acc.label : '').toLowerCase();
-    return Boolean(l && (dn.includes(l) || l.includes(dn)));
-  }) || null;
+    if (normIdent) {
+      if ((c.email || '').toLowerCase() === normIdent) score += 10;
+      if (channels.some(ch => {
+        const rid = (ch.remote_id || '').replace(/^@/, '').toLowerCase();
+        const hdl = (ch.handle || '').replace(/^@/, '').toLowerCase();
+        return rid === normIdent || hdl === normIdent;
+      })) {
+        score += 10;
+      }
+    }
+    if (score === 0 && normLabel && c.display_name) {
+      const dn = c.display_name.toLowerCase();
+      if (dn.includes(normLabel) || normLabel.includes(dn)) {
+        score += 4;
+      }
+    }
+    if (score === 0) continue;
+    if (hasProvider) score += 5;
+    if (c.avatar_url && c.avatar_url.trim() !== '') score += 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best;
 }
 
 // Cargar Cuentas (ZapZap inspired)
@@ -2531,14 +2665,12 @@ window.removeAccount = async (id) => {
   }
 };
 
-// ================= GESTIÓN DE CONTACTOS UNIFICADOS (Identity Graph) =================
+// ================= GESTIÓN DE CONTACTOS UNIFICADOS =================
 async function loadContacts() {
   try {
     const contacts = await window.conduitAPI.listContacts();
     state.contacts = contacts || [];
-    renderContactsGrid();
-    populateMergeSelects();
-    populateIdentitySelects();
+    renderContactsList();
     renderAccountsSidebar();
     renderAccountsGrid();
     if (state.activeConversationId) {
@@ -2550,208 +2682,154 @@ async function loadContacts() {
   }
 }
 
-function renderContactsGrid() {
-  if (!el.contactsGrid) return;
-  el.contactsGrid.innerHTML = '';
-  if (state.contacts.length === 0) {
-    el.contactsGrid.innerHTML = '<p class="text-muted">No hay contactos registrados en el Identity Graph.</p>';
+function providerKeyFor(providerVal) {
+  const info = providerInfoForChannel({ provider: providerVal });
+  if (info && info.kind && info.kind !== 'default' && info.kind !== 'unknown') {
+    return info.kind;
+  }
+  return String(providerVal || '').toLowerCase();
+}
+
+function resolveChannelAccountLabel(channel, contactChannels) {
+  if (!channel) return '';
+  const targetKey = providerKeyFor(channel.provider);
+  const accountsForProvider = (state.accounts || []).filter(
+    a => providerKeyFor(a.provider) === targetKey
+  );
+  const contactChannelsForProvider = (contactChannels || []).filter(
+    x => providerKeyFor(x.provider) === targetKey
+  );
+  if (accountsForProvider.length <= 1 && contactChannelsForProvider.length <= 1) {
+    return '';
+  }
+  if (channel.account_id) {
+    const account = (state.accounts || []).find(a => a.id === channel.account_id);
+    if (account) {
+      return account.label || account.identifier || channel.account_id;
+    }
+    return channel.account_id;
+  }
+  return channel.handle || channel.remote_id || '';
+}
+
+function renderContactsList(filterQuery) {
+  if (!el.contactsList) return;
+  el.contactsList.innerHTML = '';
+
+  const rawQuery = filterQuery !== undefined
+    ? String(filterQuery)
+    : (el.contactsSearchInput ? String(el.contactsSearchInput.value || '') : '');
+  const query = rawQuery.trim().toLowerCase();
+
+  const filtered = (state.contacts || []).filter(c => {
+    if (!query) return true;
+    const haystacks = [
+      c.display_name,
+      c.email,
+      c.phone,
+      ...(c.channels || []).flatMap(ch => [ch.handle, ch.remote_id]),
+    ];
+    return haystacks.some(v => v && String(v).toLowerCase().includes(query));
+  });
+
+  if (filtered.length === 0) {
+    el.contactsList.innerHTML = '<p class="text-muted">No hay contactos para mostrar.</p>';
     return;
   }
 
-  state.contacts.forEach(c => {
-    const card = document.createElement('div');
-    card.className = 'account-card';
+  filtered.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'contact-row';
     const channels = c.channels || [];
+    const avatarContent = getAvatarHTML(c.avatar_url, c.display_name || 'Contacto');
+    const metaParts = [c.email, c.phone].filter(Boolean).map(v => escapeHTML(v));
 
-    const channelsBadges = channels.map(ch => {
-      const chInfo = getProviderByEnum(ch.provider);
-      const icon = chInfo.icon;
+    const chipsHtml = channels.map(ch => {
+      const chInfo = providerInfoForChannel(ch);
       const chColor = chInfo.color || `var(--accent-${chInfo.id})`;
+      const accountLabel = resolveChannelAccountLabel(ch, channels);
+      const accountBadge = accountLabel
+        ? `<span class="chip-account-label">${escapeHTML(accountLabel)}</span>`
+        : '';
+      const titleAttr = escapeHTML(ch.handle || ch.remote_id || chInfo.name);
       return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:6px;margin-top:6px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <i class="${icon}" style="color:${chColor}"></i>
-            <span style="font-size:12px;">${escapeHTML(ch.handle || ch.remote_id)}</span>
-          </div>
-          ${channels.length > 1 ? `
-            <button class="icon-btn-sm" onclick="splitContactChannel('${ch.id}', '${escapeHTML(ch.handle || ch.remote_id)}')" title="Desacoplar canal a un contacto independiente">
-              <i class="fa-solid fa-scissors"></i>
-            </button>` : ''}
-        </div>
+        <button class="provider-chip" data-contact-id="${escapeHTML(c.id)}" data-channel-id="${escapeHTML(ch.id)}" onclick="startChatWithChannel('${escapeHTML(c.id)}', '${escapeHTML(ch.id)}')" title="${titleAttr}">
+          <i class="${chInfo.icon}" style="color:${chColor}"></i>
+          <span>${escapeHTML(chInfo.name)}</span>
+          ${accountBadge}
+        </button>
       `;
     }).join('');
 
-    const avatarContent = getAvatarHTML(c.avatar_url, c.display_name || 'Contacto');
-
-    const identityLines = [];
-    if (c.email) identityLines.push(`<div><i class="fa-solid fa-envelope"></i> ${escapeHTML(c.email)}</div>`);
-    if (c.phone) identityLines.push(`<div><i class="fa-solid fa-phone"></i> ${escapeHTML(c.phone)}</div>`);
-    if (identityLines.length === 0) identityLines.push('<div>Sin identidad canónica (email / teléfono)</div>');
-
-    card.innerHTML = `
-      <div class="account-card-header">
+    row.innerHTML = `
+      <div class="contact-row-main">
         <div class="conv-avatar">${avatarContent}</div>
-        <div>
-          <h4>${escapeHTML(c.display_name || 'Contacto')}</h4>
-          <span style="font-size:11px;color:var(--text-dim);">${channels.length} canal(es) unificado(s)</span>
+        <div class="contact-row-info">
+          <div class="contact-row-name">${escapeHTML(c.display_name || 'Contacto')}</div>
+          ${metaParts.length > 0 ? `<div class="contact-row-meta">${metaParts.join(' · ')}</div>` : ''}
         </div>
       </div>
-      <div style="margin-top:8px;font-size:11px;color:var(--text-dim);display:flex;flex-direction:column;gap:2px;">
-        ${identityLines.join('')}
-      </div>
-      <div style="margin-top:8px;">
-        <p style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;">Canales Vinculados:</p>
-        ${channelsBadges || '<p style="font-size:12px;color:var(--text-dim)">Sin canales activos</p>'}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:auto;padding-top:12px;">
-        <button class="btn-card btn-primary" onclick="openChatWithContact('${c.id}')" style="width:100%;">
-          <i class="fa-solid fa-comment"></i> Abrir Chat
-        </button>
-        <button class="btn-card" style="background:#3f4147;color:white;" onclick="editContactIdentity('${c.id}')" title="Definir email y teléfono">
-          <i class="fa-solid fa-id-card"></i>
-        </button>
+      <div class="contact-channels-chips">
+        ${chipsHtml || '<span class="text-muted" style="font-size:12px;">Sin canales activos</span>'}
       </div>
     `;
-    el.contactsGrid.appendChild(card);
+    el.contactsList.appendChild(row);
   });
 }
 
-function populateMergeSelects() {
-  if (!el.mergePrimarySelect || !el.mergeSecondarySelect) return;
-  el.mergePrimarySelect.innerHTML = '';
-  el.mergeSecondarySelect.innerHTML = '';
-
-  state.contacts.forEach(c => {
-    const opt1 = document.createElement('option');
-    opt1.value = c.id;
-    opt1.textContent = `${c.display_name} (${(c.channels || []).length} canales)`;
-    el.mergePrimarySelect.appendChild(opt1);
-
-    const opt2 = document.createElement('option');
-    opt2.value = c.id;
-    opt2.textContent = `${c.display_name} (${(c.channels || []).length} canales)`;
-    el.mergeSecondarySelect.appendChild(opt2);
-  });
-}
-
-// Rellena los selectores de identidad canónica y de vinculación manual.
-function populateIdentitySelects() {
-  [el.identityContactSelect, el.identityTargetSelect].forEach(select => {
-    if (!select) return;
-    select.innerHTML = '';
-    state.contacts.forEach(c => {
-      const option = document.createElement('option');
-      option.value = c.id;
-      const identity = c.email || c.phone || `${(c.channels || []).length} canales`;
-      option.textContent = `${c.display_name || 'Contacto'} — ${identity}`;
-      select.appendChild(option);
-    });
-  });
-
-  if (el.identityContactSelect) {
-    const current = state.contacts.find(x => x.id === el.identityContactSelect.value);
-    if (el.identityEmailInput) el.identityEmailInput.value = (current && current.email) || '';
-    if (el.identityPhoneInput) el.identityPhoneInput.value = (current && current.phone) || '';
-  }
-}
-
-// Abre el formulario de identidad canónica con los valores actuales del contacto.
-window.editContactIdentity = (contactId) => {
-  if (!el.identitySetBox) return;
-  populateIdentitySelects();
-  if (el.identityContactSelect) el.identityContactSelect.value = contactId;
-  const contact = state.contacts.find(x => x.id === contactId);
-  if (el.identityEmailInput) el.identityEmailInput.value = (contact && contact.email) || '';
-  if (el.identityPhoneInput) el.identityPhoneInput.value = (contact && contact.phone) || '';
-  el.identitySetBox.classList.remove('hidden');
-  if (el.identitySetBox.scrollIntoView) el.identitySetBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-};
-
-// Busca contactos por email, teléfono o identificador y ofrece fusionarlos dentro del contacto principal.
-async function searchContactsByIdentity() {
-  if (!el.identityQueryInput || !el.identityResults) return;
-
-  const query = el.identityQueryInput.value.trim();
-  if (!query) {
-    alert('Ingresa un email, un teléfono o un identificador para buscar.');
-    return;
-  }
-
-  const targetId = el.identityTargetSelect ? el.identityTargetSelect.value : '';
-  const target = state.contacts.find(c => c.id === targetId);
-  el.identityResults.innerHTML = '<div class="loading-state"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</div>';
-
-  let matches = [];
-  try {
-    matches = await window.conduitAPI.findContactsByIdentity(query) || [];
-  } catch (e) {
-    el.identityResults.innerHTML = `<p style="font-size:12px;color:var(--danger)">Error buscando identidad: ${escapeHTML(e.message)}</p>`;
-    return;
-  }
-
-  if (matches.length === 0) {
-    el.identityResults.innerHTML = `<p style="font-size:12px;color:var(--text-muted)">Ningún contacto coincide con "${escapeHTML(query)}".</p>`;
-    return;
-  }
-
-  const targetName = target ? target.display_name : 'el contacto principal';
-  el.identityResults.innerHTML = matches.map(match => {
-    const channels = (match.channels || []).length;
-    const identity = [match.email, match.phone].filter(Boolean).join(' · ') || 'sin identidad canónica';
-    const isTarget = match.id === targetId;
-
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.04);padding:8px 12px;border-radius:6px;margin-top:6px;gap:12px;">
-        <div>
-          <div style="font-size:13px;font-weight:600;">${escapeHTML(match.display_name || 'Contacto')}</div>
-          <div style="font-size:11px;color:var(--text-dim);">${escapeHTML(identity)} · ${channels} canal(es)</div>
-        </div>
-        ${isTarget
-          ? '<span class="text-muted" style="font-size:11px;">Ya es el contacto principal</span>'
-          : `<button class="btn-card btn-primary" onclick="mergeIdentityMatch('${match.id}')">Fusionar en ${escapeHTML(targetName)}</button>`}
-      </div>
-    `;
-  }).join('');
-}
-
-// Fusiona un resultado de búsqueda de identidad dentro del contacto principal elegido.
-window.mergeIdentityMatch = async (secondaryId) => {
-  const primaryId = el.identityTargetSelect ? el.identityTargetSelect.value : '';
-  if (!primaryId) {
-    alert('Selecciona un contacto principal.');
-    return;
-  }
-  if (primaryId === secondaryId) {
-    alert('Ese contacto ya es el principal.');
-    return;
-  }
+async function syncAllContacts() {
+  if (el.btnSyncContacts) el.btnSyncContacts.disabled = true;
+  if (el.contactsSyncStatus) el.contactsSyncStatus.textContent = 'Sincronizando contactos...';
 
   try {
-    await window.conduitAPI.mergeContacts(primaryId, secondaryId);
+    const res = await window.conduitAPI.syncContacts('', '');
     await loadContacts();
-    await loadConversations();
-    if (el.identityResults) el.identityResults.innerHTML = '<p style="font-size:12px;color:var(--success,#3ba55d)">Contactos fusionados.</p>';
-  } catch (e) {
-    alert('Error fusionando contactos: ' + e.message);
+    if (el.contactsSyncStatus) {
+      const synced = (res && res.synced_count) || 0;
+      const unified = (res && res.unified_count) || 0;
+      el.contactsSyncStatus.textContent = `${synced} sincronizados · ${unified} unificados`;
+    }
+  } catch (err) {
+    console.error('Error syncAllContacts:', err);
+    if (el.contactsSyncStatus) el.contactsSyncStatus.textContent = `Error al sincronizar: ${err.message}`;
+  } finally {
+    if (el.btnSyncContacts) el.btnSyncContacts.disabled = false;
   }
-};
+}
 
-window.splitContactChannel = async (channelId, handle) => {
-  const newName = prompt(`Ingresa el nombre del nuevo contacto individual para el canal (${handle}):`, handle);
-  if (!newName) return;
-
+async function startChatWithChannel(contactId, channelId) {
   try {
-    await window.conduitAPI.splitChannel(channelId, newName);
-    await loadContacts();
-    await loadConversations();
-  } catch (e) {
-    alert('Error desacoplando canal: ' + e.message);
-  }
-};
+    const conv = await window.conduitAPI.startChat(contactId, channelId || '');
+    if (!conv || !conv.id) return;
 
-window.openChatWithContact = (contactId) => {
-  selectConversation(contactId);
-};
+    const existingIdx = state.conversations.findIndex(c => c.id === conv.id);
+    if (existingIdx >= 0) {
+      state.conversations[existingIdx] = {
+        ...state.conversations[existingIdx],
+        ...conv,
+        last_message_preview: conv.last_message_preview || state.conversations[existingIdx].last_message_preview,
+        unread_count: state.conversations[existingIdx].unread_count,
+      };
+    } else {
+      state.conversations.unshift(conv);
+    }
+    renderConversations();
+
+    await selectConversation(conv.id);
+    showView('view-chat');
+    if (typeof setActiveSidebarPill === 'function' && el.tabAllConvs) {
+      setActiveSidebarPill(el.tabAllConvs);
+    }
+    updateChannelSelector(conv);
+    if (el.channelSelect && channelId) {
+      el.channelSelect.value = channelId;
+    }
+  } catch (err) {
+    console.error('Error startChatWithChannel:', err);
+    alert('Error iniciando chat: ' + err.message);
+  }
+}
+window.startChatWithChannel = startChatWithChannel;
 
 // Cargar Plugins
 async function loadPlugins() {
@@ -2759,11 +2837,48 @@ async function loadPlugins() {
     const plugins = await window.conduitAPI.listPlugins();
     state.plugins = plugins || [];
     rebuildProviderRegistry(state.plugins);
+    updatePluginsBadge();
     renderPlugins();
     refreshProviderViews();
   } catch (err) {
     console.error('Error loadPlugins:', err);
   }
+}
+
+function updatePluginsBadge() {
+  const plugins = state.plugins || [];
+  const updatesCount = plugins.filter(p => Boolean(p.update_available)).length;
+  const newCount = plugins.filter(p => Boolean(p.is_new) && !p.update_available).length;
+  const totalCount = updatesCount + newCount;
+
+  if (el.pluginsUpdateBadge) {
+    if (totalCount > 0) {
+      el.pluginsUpdateBadge.textContent = String(totalCount);
+      el.pluginsUpdateBadge.classList.remove('hidden');
+    } else {
+      el.pluginsUpdateBadge.textContent = '';
+      el.pluginsUpdateBadge.classList.add('hidden');
+    }
+  }
+
+  if (el.btnUpdateAllPlugins) {
+    el.btnUpdateAllPlugins.disabled = !plugins.some(
+      p => Boolean(p.update_available) && !p.managed_externally && p.compatible !== false
+    );
+  }
+}
+
+function showPluginsFeedback(message, isError = false) {
+  if (!el.pluginsActionFeedback) return;
+  if (!message) {
+    el.pluginsActionFeedback.textContent = '';
+    el.pluginsActionFeedback.classList.add('hidden');
+    el.pluginsActionFeedback.classList.remove('account-status-message-error');
+    return;
+  }
+  el.pluginsActionFeedback.textContent = message;
+  el.pluginsActionFeedback.classList.remove('hidden');
+  el.pluginsActionFeedback.classList.toggle('account-status-message-error', Boolean(isError));
 }
 
 // Vuelve a pintar lo que depende de los manifiestos (selector de alta, cuentas, badges).
@@ -2787,10 +2902,12 @@ function renderPlugins() {
   state.plugins.forEach(p => {
     const isEnabled = p.is_enabled !== undefined ? p.is_enabled : (p.enabled || false);
     const isInstalled = p.is_installed !== undefined ? p.is_installed : true;
+    const isCompatible = p.compatible !== false;
+    const isExternal = Boolean(p.managed_externally);
     const div = document.createElement('div');
     div.className = 'account-card';
     div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
         <div>
           <h4>${escapeHTML(p.name || p.id)} (v${escapeHTML(p.version || '1.0')})</h4>
           <p style="font-size:13px;color:var(--text-muted)">${escapeHTML(p.description || 'Plugin oficial de canal')}</p>
@@ -2799,26 +2916,43 @@ function renderPlugins() {
           ${p.repository ? `<p style="font-size:11px;color:var(--text-dim);margin-top:2px;">Repositorio: ${escapeHTML(p.repository)}</p>` : ''}
           ${isInstalled && p.path ? `<p style="font-size:11px;color:var(--text-dim);margin-top:2px;word-break:break-all;">Ruta: ${escapeHTML(p.path)}</p>` : ''}
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">
+            ${p.is_third_party ? 'Third-Party' : 'Official'}
+          </span>
+          ${p.is_new ? '<span class="account-status-badge status-badge-new">Nuevo</span>' : ''}
+          ${p.update_available && p.latest_version ? `<span class="account-status-badge status-badge-update">Actualización v${escapeHTML(p.latest_version)}</span>` : ''}
+          ${isExternal ? '<span class="account-status-badge status-badge-external">Gestionado externamente</span>' : ''}
           <span class="account-status-badge ${isEnabled ? 'status-badge-connected' : 'status-badge-disconnected'}">
             ${isEnabled ? 'Habilitado' : 'Deshabilitado'}
           </span>
         </div>
       </div>
+      ${!isCompatible ? `<div class="account-status-message account-status-message-error">Incompatible: ${escapeHTML(p.incompatibility_reason || 'Versión de SDK no compatible')}</div>` : ''}
     `;
 
     const actionsDiv = document.createElement('div');
     actionsDiv.style.marginTop = '12px';
     actionsDiv.style.display = 'flex';
     actionsDiv.style.gap = '8px';
+    actionsDiv.style.flexWrap = 'wrap';
 
     if (!isInstalled) {
       const btnInstall = document.createElement('button');
       btnInstall.className = 'btn-card btn-primary btn-install-plugin';
       btnInstall.innerHTML = '<i class="fa-solid fa-download"></i> Instalar';
+      btnInstall.disabled = !isCompatible;
+      if (!isCompatible) {
+        btnInstall.title = p.incompatibility_reason || 'Plugin incompatible';
+      }
       btnInstall.addEventListener('click', async () => {
         try {
-          await window.conduitAPI.installPlugin(p.id);
+          const res = await window.conduitAPI.installPlugin(p.id);
+          if (res && res.success === false) {
+            showPluginsFeedback(res.message || 'Error al instalar plugin', true);
+          } else {
+            showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} instalado.`);
+          }
           await loadPlugins();
         } catch (e) {
           alert('Error al instalar plugin: ' + e.message);
@@ -2838,10 +2972,274 @@ function renderPlugins() {
         }
       });
       actionsDiv.appendChild(btnToggle);
+
+      if (p.update_available) {
+        const btnUpdate = document.createElement('button');
+        btnUpdate.className = 'btn-card btn-primary btn-update-plugin';
+        btnUpdate.innerHTML = `<i class="fa-solid fa-arrow-up"></i> Actualizar${p.latest_version ? ` (v${escapeHTML(p.latest_version)})` : ''}`;
+        btnUpdate.disabled = isExternal || !isCompatible;
+        if (isExternal) {
+          btnUpdate.title = 'Este plugin está gestionado externamente y no puede actualizarse desde la GUI.';
+        } else if (!isCompatible) {
+          btnUpdate.title = p.incompatibility_reason || 'Plugin incompatible';
+        }
+        btnUpdate.addEventListener('click', async () => {
+          try {
+            const res = await window.conduitAPI.updatePlugin(p.id, false);
+            if (res && res.success === false) {
+              showPluginsFeedback(res.message || 'Error al actualizar plugin', true);
+            } else {
+              showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} actualizado.`);
+            }
+            await loadPlugins();
+          } catch (e) {
+            alert('Error al actualizar plugin: ' + e.message);
+          }
+        });
+        actionsDiv.appendChild(btnUpdate);
+      }
+
+      const btnUninstall = document.createElement('button');
+      btnUninstall.className = 'btn-card btn-danger btn-uninstall-plugin';
+      btnUninstall.innerHTML = '<i class="fa-solid fa-trash"></i> Desinstalar';
+      btnUninstall.disabled = isExternal;
+      if (isExternal) {
+        btnUninstall.title = 'Este plugin está gestionado externamente y no puede desinstalarse desde la GUI.';
+      }
+      btnUninstall.addEventListener('click', () => {
+        const existingConfirm = Array.from(div.children || []).find(c => c.classList && c.classList.contains('uninstall-confirm'));
+        if (existingConfirm) return;
+        const confirmBox = document.createElement('div');
+        confirmBox.className = 'uninstall-confirm';
+        const promptText = document.createElement('span');
+        promptText.textContent = `¿Desinstalar ${p.name || p.id}?`;
+        const btnGroup = document.createElement('div');
+        btnGroup.style.display = 'flex';
+        btnGroup.style.gap = '6px';
+
+        const btnConfirm = document.createElement('button');
+        btnConfirm.className = 'btn-card btn-danger btn-confirm-uninstall';
+        btnConfirm.textContent = 'Confirmar';
+        btnConfirm.addEventListener('click', async () => {
+          try {
+            const res = await window.conduitAPI.uninstallPlugin(p.id);
+            if (res && res.success === false) {
+              showPluginsFeedback(res.message || 'Error al desinstalar plugin', true);
+            } else {
+              showPluginsFeedback(res && res.message ? res.message : `Plugin ${p.id} desinstalado.`);
+            }
+            await loadPlugins();
+          } catch (e) {
+            alert('Error al desinstalar plugin: ' + e.message);
+          }
+        });
+
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'btn-card btn-secondary btn-cancel-uninstall';
+        btnCancel.textContent = 'Cancelar';
+        btnCancel.addEventListener('click', () => {
+          confirmBox.remove();
+        });
+
+        btnGroup.appendChild(btnConfirm);
+        btnGroup.appendChild(btnCancel);
+        confirmBox.appendChild(promptText);
+        confirmBox.appendChild(btnGroup);
+        div.appendChild(confirmBox);
+      });
+      actionsDiv.appendChild(btnUninstall);
     }
 
     div.appendChild(actionsDiv);
     el.pluginsList.appendChild(div);
+  });
+}
+
+async function loadAboutInfo() {
+  try {
+    let appInfo = state.appInfo || null;
+    if (window.conduitAPI.getAppInfo) {
+      appInfo = await window.conduitAPI.getAppInfo();
+      state.appInfo = appInfo;
+    }
+
+    let status = state.daemonStatus || null;
+    if (!status && window.conduitAPI.getStatus) {
+      status = await window.conduitAPI.getStatus();
+      state.daemonStatus = status;
+    }
+
+    if (el.aboutGuiVersion) {
+      el.aboutGuiVersion.textContent = appInfo && appInfo.version ? `v${appInfo.version}` : '-';
+    }
+    if (el.aboutCoreVersion) {
+      el.aboutCoreVersion.textContent = status && status.core_version ? `v${status.core_version}` : '-';
+    }
+    if (el.aboutSdkProtocol) {
+      el.aboutSdkProtocol.textContent = status && status.protocol_version ? `SDK Protocol v${status.protocol_version}` : 'SDK Protocol v-';
+    }
+    if (el.aboutTuiVersion) {
+      el.aboutTuiVersion.textContent = status && status.tui_version ? `v${status.tui_version}` : 'Not installed';
+    }
+    if (el.aboutPackaging) {
+      if (appInfo && (appInfo.packagingMode || appInfo.platform)) {
+        const pkg = [appInfo.platform, appInfo.packagingMode].filter(Boolean).join(' / ');
+        el.aboutPackaging.textContent = pkg || '-';
+      } else {
+        el.aboutPackaging.textContent = '-';
+      }
+    }
+    if (el.aboutCheckedAt) {
+      el.aboutCheckedAt.textContent = state.lastUpdateCheckAt
+        ? `Última comprobación: ${state.lastUpdateCheckAt}`
+        : '';
+    }
+
+    if (el.aboutPluginsTbody) {
+      const installed = (state.plugins || []).filter(p => p.is_installed !== false);
+      if (installed.length === 0) {
+        el.aboutPluginsTbody.innerHTML = '<tr><td colspan="6" class="text-muted">Sin plugins instalados</td></tr>';
+      } else {
+        el.aboutPluginsTbody.innerHTML = installed.map(p => {
+          const isEnabled = p.is_enabled !== undefined ? p.is_enabled : Boolean(p.enabled);
+          const ver = (p.manifest && p.manifest.version) || p.version || '-';
+          const latestVer = p.latest_version ? `v${escapeHTML(p.latest_version)}` : '-';
+          const sourceLabel = p.is_third_party ? 'Third-Party' : 'Official';
+          const isCompatible = p.compatible !== false;
+          const compatLabel = isCompatible
+            ? 'Compatible'
+            : `Incompatible${p.incompatibility_reason ? `: ${escapeHTML(p.incompatibility_reason)}` : ''}`;
+          return `<tr>
+            <td>${escapeHTML(p.name || p.id)}</td>
+            <td><span class="account-status-badge ${p.is_third_party ? 'status-badge-third-party' : 'status-badge-official'}">${sourceLabel}</span></td>
+            <td>v${escapeHTML(ver)}</td>
+            <td>${latestVer}</td>
+            <td>${compatLabel}</td>
+            <td>${isEnabled ? 'Habilitado' : 'Deshabilitado'}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+  } catch (err) {
+    console.error('Error loadAboutInfo:', err);
+  }
+}
+
+function setAboutUpdateBanner(html, visible = true) {
+  if (!el.aboutUpdateStatus) return;
+  el.aboutUpdateStatus.innerHTML = html;
+  el.aboutUpdateStatus.classList.toggle('hidden', !visible);
+}
+
+async function checkForUpdates(forceRefresh = true, { background = false } = {}) {
+  try {
+    if (!background) {
+      if (el.btnCheckUpdates) el.btnCheckUpdates.disabled = true;
+      setAboutUpdateBanner('<span>Buscando actualizaciones...</span>', true);
+    }
+
+    const appInfo = state.appInfo || (window.conduitAPI.getAppInfo ? await window.conduitAPI.getAppInfo() : null);
+    state.appInfo = appInfo;
+
+    const updatesRes = window.conduitAPI.checkUpdates
+      ? await window.conduitAPI.checkUpdates(forceRefresh, appInfo && appInfo.version)
+      : null;
+    if (updatesRes) {
+      state.lastUpdateCheckAt = updatesRes.checked_at || new Date().toISOString();
+    }
+    if (updatesRes && Array.isArray(updatesRes.plugins)) {
+      state.plugins = updatesRes.plugins;
+      updatePluginsBadge();
+      renderPlugins();
+    }
+    await loadAboutInfo();
+
+    const parts = [];
+    if (!background && appInfo && appInfo.selfUpdateSupported && window.conduitAPI.checkAppUpdate) {
+      const appCheck = await window.conduitAPI.checkAppUpdate();
+      if (appCheck && appCheck.updateAvailable && appCheck.updateInfo && appCheck.updateInfo.version) {
+        parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(appCheck.updateInfo.version)}</strong></span>`);
+        parts.push('<button type="button" class="btn-card btn-primary" id="btn-download-app-update">Descargar actualización</button>');
+      } else if (appCheck && appCheck.error) {
+        parts.push(`<span>Error buscando actualización de GUI: ${escapeHTML(appCheck.error)}</span>`);
+      } else {
+        parts.push('<span>GUI actualizada.</span>');
+      }
+    } else if (updatesRes && updatesRes.gui_update_available && updatesRes.gui_latest_version && updatesRes.gui_release_url) {
+      parts.push(`<span>Nueva versión de GUI disponible: <strong>v${escapeHTML(updatesRes.gui_latest_version)}</strong></span>`);
+      parts.push('<button type="button" class="btn-card btn-primary" id="btn-open-gui-release">Ver release en GitHub</button>');
+    } else if (!background) {
+      parts.push('<span>GUI actualizada.</span>');
+    }
+
+    if (updatesRes && updatesRes.core_update_available && updatesRes.core_latest_version) {
+      parts.push(`<span>Core v${escapeHTML(updatesRes.core_latest_version)} disponible.</span>`);
+    }
+
+    if (parts.length > 0) {
+      setAboutUpdateBanner(parts.join(' '), true);
+    }
+
+    const btnDownload = document.getElementById('btn-download-app-update');
+    if (btnDownload && window.conduitAPI.downloadAppUpdate) {
+      btnDownload.onclick = async () => {
+        btnDownload.disabled = true;
+        await window.conduitAPI.downloadAppUpdate();
+      };
+    }
+
+    const btnOpenRelease = document.getElementById('btn-open-gui-release');
+    if (btnOpenRelease && updatesRes && updatesRes.gui_release_url && window.conduitAPI.openExternal) {
+      btnOpenRelease.onclick = () => {
+        window.conduitAPI.openExternal(updatesRes.gui_release_url);
+      };
+    }
+  } catch (err) {
+    if (!background) {
+      setAboutUpdateBanner(`<span>Error al buscar actualizaciones: ${escapeHTML(err.message)}</span>`, true);
+    }
+  } finally {
+    if (!background && el.btnCheckUpdates) el.btnCheckUpdates.disabled = false;
+  }
+}
+
+function setupAppUpdateEvents() {
+  if (!window.conduitAPI || !window.conduitAPI.onAppUpdateEvent) return;
+  window.conduitAPI.onAppUpdateEvent((evt) => {
+    if (!evt || !evt.type) return;
+    if (evt.type === 'update-available') {
+      const ver = evt.version ? `v${escapeHTML(evt.version)}` : '';
+      setAboutUpdateBanner(
+        `<span>Nueva versión de GUI disponible: <strong>${ver}</strong></span> <button type="button" class="btn-card btn-primary" id="btn-download-app-update">Descargar actualización</button>`,
+        true
+      );
+      const btnDownload = document.getElementById('btn-download-app-update');
+      if (btnDownload && window.conduitAPI.downloadAppUpdate) {
+        btnDownload.onclick = async () => {
+          btnDownload.disabled = true;
+          await window.conduitAPI.downloadAppUpdate();
+        };
+      }
+    } else if (evt.type === 'download-progress' || evt.type === 'downloading') {
+      const rawPct = typeof evt.percent === 'number'
+        ? evt.percent
+        : (evt.progress && typeof evt.progress.percent === 'number' ? evt.progress.percent : 0);
+      const pct = Math.round(rawPct);
+      setAboutUpdateBanner(`<span>Descargando actualización: ${pct}%</span>`, true);
+    } else if (evt.type === 'update-downloaded' || evt.type === 'downloaded') {
+      setAboutUpdateBanner(
+        '<span>Actualización descargada y lista.</span> <button type="button" class="btn-card btn-primary" id="btn-install-app-update">Reiniciar para actualizar</button>',
+        true
+      );
+      const btnInstall = document.getElementById('btn-install-app-update');
+      if (btnInstall && window.conduitAPI.installAppUpdate) {
+        btnInstall.addEventListener('click', () => {
+          window.conduitAPI.installAppUpdate();
+        });
+      }
+    } else if (evt.type === 'update-error' || evt.type === 'error') {
+      setAboutUpdateBanner(`<span>Error de actualización: ${escapeHTML(evt.message || 'desconocido')}</span>`, true);
+    }
   });
 }
 
@@ -2968,9 +3366,40 @@ function scheduleActiveConversationRender() {
 function setupRealtimeEvents() {
   window.conduitAPI.onEvent((envelope) => {
     console.log('Evento gRPC recibido:', envelope);
-    if (envelope.channel_status_update) {
+    if (envelope.channel_status_update && envelope.type !== 'sync.progress') {
+      const statusText = String(envelope.channel_status_update);
       checkDaemonStatus();
       loadAccounts();
+      if (statusText.includes(':disconnected') || statusText.includes(':auth_error')) {
+        const parts = statusText.split(':');
+        const prov = parts[0] || 'Canal';
+        const reason = parts.slice(2).join(':').trim();
+        showConnectionBanner(reason ? `${prov} desconectado: ${reason}` : `${prov} desconectado. Revisá la cuenta.`);
+      } else if (statusText.endsWith(':connected')) {
+        hideConnectionBanner();
+      }
+      return;
+    }
+    if (envelope.message_status_updated) {
+      const st = envelope.message_status_updated;
+      if (state.messageCache && state.messageCache.has(st.conversation_id)) {
+        const cached = state.messageCache.get(st.conversation_id);
+        if (cached && cached.messages) {
+          const target = cached.messages.find(m => m.id === st.message_id || (st.remote_message_id && m.remote_message_id === st.remote_message_id));
+          if (target) {
+            target.status = st.status;
+            if (st.remote_message_id) target.remote_message_id = st.remote_message_id;
+            if (st.error) target.error = st.error;
+          }
+        }
+      }
+      if (st.conversation_id === state.activeConversationId) {
+        updateMessageBubbleStatus(st.message_id, st.status, st.error);
+      }
+      if (st.status === 'failed') {
+        showConnectionBanner(st.error ? `No se pudo enviar el mensaje: ${st.error}` : 'No se pudo enviar el mensaje.');
+      }
+      return;
     }
     if (envelope.message_deleted) {
       removeMessageFromDOM(envelope.message_deleted);
@@ -3005,6 +3434,31 @@ function setupRealtimeEvents() {
         state.pinnedMessages.set(state.activeConversationId, list.filter(m => m.id !== envelope.message_deleted && m.remote_message_id !== envelope.message_deleted));
       }
       updatePinnedBanner();
+      return;
+    }
+    if (envelope.type === 'sync.progress' && envelope.channel_status_update) {
+      handleSyncProgressEvent(envelope.channel_status_update);
+      return;
+    }
+    if (envelope.contact_updated && envelope.contact_updated.contact) {
+      const updated = envelope.contact_updated.contact;
+      const idx = state.contacts.findIndex(c => c.id === updated.id);
+      if (idx >= 0) {
+        state.contacts[idx] = updated;
+      } else {
+        state.contacts.push(updated);
+      }
+      scheduleContactsRender();
+      if (state.activeConversationId) {
+        const activeConv = state.conversations.find(c => c.id === state.activeConversationId);
+        if (activeConv && (activeConv.contact_id === updated.id || activeConv.id === updated.id)) {
+          const prevChannel = el.channelSelect ? el.channelSelect.value : '';
+          updateChannelSelector(activeConv);
+          if (el.channelSelect && prevChannel && Array.from(el.channelSelect.options).some(o => o.value === prevChannel)) {
+            el.channelSelect.value = prevChannel;
+          }
+        }
+      }
       return;
     }
     if (envelope.conversation_read) {
@@ -3119,14 +3573,13 @@ function setupRealtimeEvents() {
         }
       }
 
-      // 3. Cuando alguien escribe o se envía un mensaje, actualizar conversación en memoria y refrescar lista para ir al top
+      // 3. Cuando alguien escribe o se envía un mensaje, actualizar conversación en memoria y refrescar lista con debounce
       const conv = state.conversations.find(c => c.id === msg.conversation_id);
       if (conv) {
         conv.last_message_at_unix = msg.sent_at_unix || Math.floor(Date.now() / 1000);
         conv.last_message_preview = msg.body;
-        renderConversations();
       }
-      loadConversations();
+      scheduleConversationsRefresh();
 
       // 4. Disparar notificación nativa de escritorio y destello en barra de tareas si corresponde
       handleDesktopNotification(msg, isHistorical);
@@ -3153,6 +3606,98 @@ function setupRealtimeEvents() {
       loadAccounts();
     }
   }, 4000);
+}
+
+let conversationsRefreshTimer = null;
+function scheduleConversationsRefresh() {
+  if (conversationsRefreshTimer) return;
+  conversationsRefreshTimer = setTimeout(() => {
+    conversationsRefreshTimer = null;
+    if (!state.isSearching) {
+      renderConversations();
+      loadConversations();
+    }
+  }, 250);
+}
+
+let contactsRenderTimer = null;
+function scheduleContactsRender() {
+  if (contactsRenderTimer) return;
+  contactsRenderTimer = setTimeout(() => {
+    contactsRenderTimer = null;
+    renderContactsList();
+  }, 150);
+}
+
+const syncProgressByProvider = new Map();
+let syncHideTimer = null;
+let syncDismissedByUser = false;
+
+function handleSyncProgressEvent(rawPayload) {
+  let data;
+  try {
+    data = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
+  } catch {
+    return;
+  }
+  if (!data || !data.provider) return;
+
+  if (data.status === 'syncing') {
+    syncDismissedByUser = false;
+  }
+  syncProgressByProvider.set(data.provider, {
+    completed: Number(data.completed) || 0,
+    total: Number(data.total) || 0,
+    status: data.status || 'syncing',
+  });
+
+  let totalSum = 0;
+  let completedSum = 0;
+  let anySyncing = false;
+  const activeProviders = [];
+  syncProgressByProvider.forEach((entry, prov) => {
+    totalSum += entry.total;
+    completedSum += Math.min(entry.completed, entry.total);
+    const isEntryDone = entry.status === 'done' || (entry.total > 0 && entry.completed >= entry.total);
+    if (!isEntryDone) {
+      anySyncing = true;
+      activeProviders.push(prov);
+    }
+  });
+
+  if (syncHideTimer) {
+    clearTimeout(syncHideTimer);
+    syncHideTimer = null;
+  }
+
+  const pct = totalSum > 0 ? Math.min(100, Math.round((completedSum / totalSum) * 100)) : 100;
+  if (el.syncProgressBar) el.syncProgressBar.style.width = `${pct}%`;
+  if (el.syncProgressCount) el.syncProgressCount.textContent = `${completedSum} / ${totalSum}`;
+  if (el.syncProgressDetail) {
+    el.syncProgressDetail.textContent = anySyncing
+      ? `Cargando mensajes (${activeProviders.join(', ')})…`
+      : 'Mensajes sincronizados';
+  }
+
+  if (el.syncProgressClose && !el.syncProgressClose._bound) {
+    el.syncProgressClose._bound = true;
+    el.syncProgressClose.addEventListener('click', () => {
+      syncDismissedByUser = true;
+      if (el.syncProgressModal) el.syncProgressModal.classList.add('hidden');
+    });
+  }
+
+  if (!syncDismissedByUser && el.syncProgressModal) {
+    el.syncProgressModal.classList.remove('hidden');
+  }
+
+  if (!anySyncing) {
+    syncHideTimer = setTimeout(() => {
+      if (el.syncProgressModal) el.syncProgressModal.classList.add('hidden');
+      syncProgressByProvider.clear();
+      syncHideTimer = null;
+    }, 350);
+  }
 }
 
 // Determina si un mensaje entrante debe disparar notificación de escritorio
@@ -3800,6 +4345,47 @@ function setupEmojiPicker() {
     }
   });
 
+  const btnDismissBanner = document.getElementById('btn-dismiss-connection-banner');
+  if (btnDismissBanner) {
+    btnDismissBanner.addEventListener('click', hideConnectionBanner);
+  }
+  const btnRenameContact = document.getElementById('btn-rename-contact');
+  const renameForm = document.getElementById('rename-contact-form');
+  const renameInput = document.getElementById('rename-contact-input');
+  const btnCancelRename = document.getElementById('btn-cancel-rename-contact');
+  if (btnRenameContact && renameForm && renameInput) {
+    btnRenameContact.addEventListener('click', () => {
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      renameInput.value = conv && conv.title ? conv.title : '';
+      renameForm.classList.remove('hidden');
+      renameInput.focus();
+    });
+  }
+  if (btnCancelRename && renameForm) {
+    btnCancelRename.addEventListener('click', () => {
+      renameForm.classList.add('hidden');
+    });
+  }
+  if (renameForm && renameInput) {
+    renameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = renameInput.value.trim();
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      if (!newName || !conv || !conv.contact_id || !window.conduitAPI?.renameContact) return;
+      try {
+        const updated = await window.conduitAPI.renameContact(conv.contact_id, newName);
+        const finalName = (updated && updated.display_name) ? updated.display_name : newName;
+        conv.title = finalName;
+        el.activeChatTitle.textContent = formatConversationTitle(conv);
+        renameForm.classList.add('hidden');
+        state.lastConversationsHash = '';
+        renderConversations();
+      } catch (err) {
+        showConnectionBanner(`No se pudo renombrar el contacto: ${err.message || err}`);
+      }
+    });
+  }
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (state.audioRecorder && state.audioRecorder.isRecording) {
@@ -4035,120 +4621,105 @@ function setupEventListeners() {
     });
   }
 
-  if (el.btnShowMergeModal && el.mergeContactsBox) {
-    el.btnShowMergeModal.addEventListener('click', () => {
-      populateMergeSelects();
-      el.mergeContactsBox.classList.remove('hidden');
-    });
-
-    el.btnCancelMerge.addEventListener('click', () => {
-      el.mergeContactsBox.classList.add('hidden');
-    });
-
-    el.btnSubmitMerge.addEventListener('click', async () => {
-      const primaryId = el.mergePrimarySelect.value;
-      const secondaryId = el.mergeSecondarySelect.value;
-
-      if (!primaryId || !secondaryId) {
-        alert('Selecciona dos contactos para unificar.');
-        return;
-      }
-      if (primaryId === secondaryId) {
-        alert('El contacto principal y secundario no pueden ser el mismo.');
-        return;
-      }
-
-      try {
-        await window.conduitAPI.mergeContacts(primaryId, secondaryId);
-        el.mergeContactsBox.classList.add('hidden');
-        await loadContacts();
-        await loadConversations();
-        alert('✅ Contactos unificados exitosamente.');
-      } catch (e) {
-        alert('Error unificando contactos: ' + e.message);
-      }
+  if (el.contactsSearchInput) {
+    el.contactsSearchInput.addEventListener('input', () => {
+      renderContactsList();
     });
   }
 
-  // Identidad canónica: definir email/teléfono y vincular manualmente por identidad
-  if (el.btnShowIdentityModal && el.identitySetBox) {
-    el.btnShowIdentityModal.addEventListener('click', () => {
-      populateIdentitySelects();
-      el.identitySetBox.classList.remove('hidden');
+  if (el.btnSyncContacts) {
+    el.btnSyncContacts.addEventListener('click', () => {
+      syncAllContacts();
     });
-
-    el.btnCancelIdentity.addEventListener('click', () => {
-      el.identitySetBox.classList.add('hidden');
-    });
-
-    el.btnSaveIdentity.addEventListener('click', async () => {
-      const contactId = el.identityContactSelect ? el.identityContactSelect.value : '';
-      const email = el.identityEmailInput ? el.identityEmailInput.value.trim() : '';
-      const phone = el.identityPhoneInput ? el.identityPhoneInput.value.trim() : '';
-
-      if (!contactId) {
-        alert('Selecciona un contacto.');
-        return;
-      }
-      if (!email && !phone) {
-        alert('Ingresa un email o un teléfono para guardar la identidad.');
-        return;
-      }
-
-      try {
-        await window.conduitAPI.setContactIdentity(contactId, email, phone);
-        el.identitySetBox.classList.add('hidden');
-        await loadContacts();
-        await loadConversations();
-      } catch (e) {
-        alert('No se pudo guardar la identidad: ' + e.message);
-      }
-    });
-
-    if (el.identityContactSelect) {
-      el.identityContactSelect.addEventListener('change', () => {
-        const c = state.contacts.find(x => x.id === el.identityContactSelect.value);
-        if (el.identityEmailInput) el.identityEmailInput.value = (c && c.email) || '';
-        if (el.identityPhoneInput) el.identityPhoneInput.value = (c && c.phone) || '';
-      });
-    }
   }
 
-  if (el.btnShowLinkIdentityModal && el.identityLinkBox) {
-    el.btnShowLinkIdentityModal.addEventListener('click', () => {
-      populateIdentitySelects();
-      if (el.identityResults) el.identityResults.innerHTML = '';
-      el.identityLinkBox.classList.remove('hidden');
-    });
-
-    el.btnCancelLinkIdentity.addEventListener('click', () => {
-      el.identityLinkBox.classList.add('hidden');
-    });
-
-    el.btnFindIdentity.addEventListener('click', () => {
-      searchContactsByIdentity();
-    });
-
-    if (el.identityQueryInput) {
-      el.identityQueryInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          searchContactsByIdentity();
-        }
-      });
-    }
-  }
-
-  el.btnPlugins.addEventListener('click', () => {
+  el.btnPlugins.addEventListener('click', async () => {
     setActiveSidebarPill(el.btnPlugins);
     showView('view-plugins');
+    if (window.conduitAPI && window.conduitAPI.markPluginsSeen) {
+      try {
+        await window.conduitAPI.markPluginsSeen();
+        (state.plugins || []).forEach(p => { p.is_new = false; });
+        updatePluginsBadge();
+        renderPlugins();
+      } catch (err) {
+        console.error('Error markPluginsSeen:', err);
+      }
+    }
   });
+
+  if (el.btnInstallCustomPlugin) {
+    el.btnInstallCustomPlugin.addEventListener('click', async () => {
+      const repo = el.pluginCustomRepoInput ? el.pluginCustomRepoInput.value.trim() : '';
+      if (!repo) return;
+      el.btnInstallCustomPlugin.disabled = true;
+      try {
+        const res = await window.conduitAPI.installPlugin(repo);
+        if (res && res.success === false) {
+          showPluginsFeedback(res.message || 'Error al instalar plugin', true);
+        } else {
+          showPluginsFeedback(res && res.message ? res.message : `Plugin ${repo} instalado.`);
+          if (el.pluginCustomRepoInput) el.pluginCustomRepoInput.value = '';
+        }
+        await loadPlugins();
+      } catch (e) {
+        showPluginsFeedback('Error al instalar plugin: ' + e.message, true);
+      } finally {
+        el.btnInstallCustomPlugin.disabled = false;
+      }
+    });
+  }
+
+  if (el.btnUpdateAllPlugins) {
+    el.btnUpdateAllPlugins.addEventListener('click', async () => {
+      el.btnUpdateAllPlugins.disabled = true;
+      try {
+        const res = await window.conduitAPI.updatePlugin('', true);
+        if (res && res.success === false) {
+          showPluginsFeedback(res.message || 'Error al actualizar plugins', true);
+        } else {
+          showPluginsFeedback(res && res.message ? res.message : 'Plugins actualizados.');
+        }
+        await loadPlugins();
+      } catch (e) {
+        showPluginsFeedback('Error al actualizar plugins: ' + e.message, true);
+      } finally {
+        updatePluginsBadge();
+      }
+    });
+  }
+
+  if (el.btnCheckPluginUpdates) {
+    el.btnCheckPluginUpdates.addEventListener('click', async () => {
+      el.btnCheckPluginUpdates.disabled = true;
+      try {
+        const res = await window.conduitAPI.checkUpdates(true);
+        if (res && Array.isArray(res.plugins)) {
+          state.plugins = res.plugins;
+          updatePluginsBadge();
+          renderPlugins();
+        }
+        showPluginsFeedback('Catálogo de plugins verificado.');
+      } catch (e) {
+        showPluginsFeedback('Error al verificar actualizaciones: ' + e.message, true);
+      } finally {
+        el.btnCheckPluginUpdates.disabled = false;
+      }
+    });
+  }
 
   el.btnSettings.addEventListener('click', () => {
     setActiveSidebarPill(el.btnSettings);
     loadSettings();
+    loadAboutInfo();
     showView('view-settings');
   });
+
+  if (el.btnCheckUpdates) {
+    el.btnCheckUpdates.addEventListener('click', () => {
+      checkForUpdates(true);
+    });
+  }
 
   const btnSaveSettings = document.getElementById('btn-save-settings');
   if (btnSaveSettings) {
@@ -4198,11 +4769,25 @@ function getInitials(name) {
   return cleanName.substring(0, 1).toUpperCase();
 }
 
+function normalizeAvatarURL(avatarUrl) {
+  if (!avatarUrl || typeof avatarUrl !== 'string') return '';
+  const trimmed = avatarUrl.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('file://')) {
+    return `local-media://${encodeURIComponent(trimmed.slice(7))}`;
+  }
+  if (trimmed.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    return `local-media://${encodeURIComponent(trimmed)}`;
+  }
+  return trimmed;
+}
+
 // Genera el contenido interno de un avatar: imagen si existe, o iniciales con soporte onerror
 function getAvatarHTML(avatarUrl, name, fallbackIcon = '') {
   const initials = getInitials(name);
-  if (avatarUrl && avatarUrl.trim() !== '') {
-    const safeUrl = escapeHTML(avatarUrl.trim());
+  const normalized = normalizeAvatarURL(avatarUrl);
+  if (normalized) {
+    const safeUrl = escapeHTML(normalized);
     const safeInitials = escapeHTML(initials);
     return `<img src="${safeUrl}" alt="${safeInitials}" onerror="this.onerror=null; this.parentElement.innerHTML='<span>${safeInitials}</span>';">`;
   }
@@ -4391,15 +4976,7 @@ function renderCachedAttachmentHTML(att) {
 
   // 3. Audios y Notas de Voz
   if (mime.startsWith('audio/')) {
-    return `
-      <div class="media-audio-card">
-        <div class="audio-icon-badge"><i class="fa-solid fa-microphone-lines"></i></div>
-        <audio controls preload="metadata">
-          <source src="${escapeHTML(src)}" type="${escapeHTML(mime)}">
-          Tu sistema no soporta audio HTML5.
-        </audio>
-      </div>
-    `;
+    return renderAudioPlayerHTML(att, src, mime, name);
   }
 
   // 4. Documentos (PDF, DOCX, ZIP, etc.)
@@ -4595,6 +5172,230 @@ async function forwardMessageToConversation(targetConvId) {
     console.error('Error reenviando mensaje:', err);
     alert('Error al reenviar mensaje: ' + (err.message || err));
   }
+}
+
+const linkPreviewCache = new Map();
+const URL_MATCH_REGEX = /https?:\/\/[^\s<>"'`]+/gi;
+
+function stripTrailingUrlPunctuation(rawUrl) {
+  return String(rawUrl || '').replace(/[.,;!?)]+$/, '');
+}
+
+function extractFirstHttpUrl(text) {
+  if (!text || typeof text !== 'string') return '';
+  URL_MATCH_REGEX.lastIndex = 0;
+  const match = URL_MATCH_REGEX.exec(text);
+  if (!match) return '';
+  return stripTrailingUrlPunctuation(match[0]);
+}
+
+function linkifyMessageBody(text) {
+  if (!text || typeof text !== 'string') return '';
+  URL_MATCH_REGEX.lastIndex = 0;
+  let result = '';
+  let lastIndex = 0;
+  let match;
+  while ((match = URL_MATCH_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      result += escapeHTML(text.slice(lastIndex, match.index));
+    }
+    const raw = match[0];
+    const cleanUrl = stripTrailingUrlPunctuation(raw);
+    const trailing = raw.slice(cleanUrl.length);
+    const safeUrl = escapeHTML(cleanUrl);
+    result += `<a href="${safeUrl}" class="msg-link" onclick="openExternalLink(event, '${safeUrl}')">${safeUrl}</a>${escapeHTML(trailing)}`;
+    lastIndex = match.index + raw.length;
+  }
+  if (lastIndex < text.length) {
+    result += escapeHTML(text.slice(lastIndex));
+  }
+  return result;
+}
+
+function openExternalLink(event, url) {
+  if (event) event.preventDefault();
+  if (url && window.conduitAPI && typeof window.conduitAPI.openExternal === 'function') {
+    window.conduitAPI.openExternal(url);
+  }
+}
+
+function renderLinkPreviewCardHTML(preview) {
+  if (!preview || !preview.url) return '';
+  const safeUrl = escapeHTML(preview.url);
+  const safeTitle = escapeHTML(preview.title || preview.domain || preview.url);
+  const safeDesc = escapeHTML(preview.description || '');
+  const safeSite = escapeHTML(preview.siteName || preview.domain || '');
+  const imgHTML = preview.image && /^https?:\/\//i.test(preview.image)
+    ? `<div class="link-preview-thumb"><img src="${escapeHTML(preview.image)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'" /></div>`
+    : '';
+  return `
+    <div class="link-preview-card" onclick="openExternalLink(event, '${safeUrl}')" title="${safeUrl}">
+      ${imgHTML}
+      <div class="link-preview-body">
+        <div class="link-preview-domain">${safeSite}</div>
+        <div class="link-preview-title">${safeTitle}</div>
+        ${safeDesc ? `<div class="link-preview-desc">${safeDesc}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function loadLinkPreviewIntoRow(row, url) {
+  if (!row || !url || !window.conduitAPI || typeof window.conduitAPI.fetchLinkPreview !== 'function') return;
+  try {
+    const preview = await window.conduitAPI.fetchLinkPreview(url);
+    linkPreviewCache.set(url, preview || null);
+    if (!preview) return;
+    const cardHTML = renderLinkPreviewCardHTML(preview);
+    const slot = row.querySelector && row.querySelector('.link-preview-slot');
+    if (slot && slot.parentNode) {
+      slot.outerHTML = cardHTML;
+    } else if (typeof row._html === 'string') {
+      const marker = `<div class="link-preview-slot" data-preview-url="${escapeHTML(url)}"></div>`;
+      row._html = row._html.replace(marker, cardHTML);
+    }
+  } catch {
+    linkPreviewCache.set(url, null);
+  }
+}
+
+function formatAudioDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+function buildAudioWaveformBarsHTML(seedKey) {
+  let hash = 2166136261;
+  const str = String(seedKey || 'audio');
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const bars = [];
+  for (let i = 0; i < 24; i++) {
+    const val = Math.abs(Math.imul(hash ^ (i * 37), 2654435761)) % 100;
+    const heightPct = 25 + Math.round((val / 100) * 75);
+    bars.push(`<span class="audio-wave-bar" style="height:${heightPct}%"></span>`);
+  }
+  return bars.join('');
+}
+
+function renderAudioPlayerHTML(att, src, mime, name) {
+  const seed = (att && att.id) || name || src;
+  const barsHTML = buildAudioWaveformBarsHTML(seed);
+  return `
+    <div class="media-audio-card" data-audio-seed="${escapeHTML(seed)}">
+      <audio class="audio-native-el" preload="metadata"
+        onloadedmetadata="initAudioPlayerMeta(this)"
+        ontimeupdate="syncAudioPlayerProgress(this)"
+        onended="resetAudioPlayerUI(this)">
+        <source src="${escapeHTML(src)}" type="${escapeHTML(mime)}">
+      </audio>
+      <button type="button" class="audio-play-btn" onclick="toggleAudioPlay(this)" title="Reproducir / Pausar">
+        <i class="fa-solid fa-play"></i>
+      </button>
+      <div class="audio-player-main">
+        <div class="audio-waveform-track" onclick="seekAudioTrack(event, this)" title="Saltar en el audio">
+          ${barsHTML}
+        </div>
+        <div class="audio-player-meta">
+          <span class="audio-time-label">0:00</span>
+          <span class="audio-file-label" title="${escapeHTML(name)}"><i class="fa-solid fa-microphone-lines"></i> ${escapeHTML(name || 'Audio')}</span>
+        </div>
+      </div>
+      <button type="button" class="audio-speed-btn" onclick="cycleAudioSpeed(this)" title="Velocidad de reproducción">1x</button>
+    </div>
+  `;
+}
+
+function toggleAudioPlay(btn) {
+  const card = btn && btn.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  if (!audio) return;
+
+  if (audio.paused) {
+    document.querySelectorAll('.audio-native-el').forEach(other => {
+      if (other !== audio && !other.paused) {
+        other.pause();
+        const otherBtn = other.closest('.media-audio-card')?.querySelector('.audio-play-btn i');
+        if (otherBtn) otherBtn.className = 'fa-solid fa-play';
+      }
+    });
+    audio.play().catch(() => {});
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = 'fa-solid fa-pause';
+  } else {
+    audio.pause();
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = 'fa-solid fa-play';
+  }
+}
+
+function cycleAudioSpeed(btn) {
+  const card = btn && btn.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  const rates = [1, 1.5, 2];
+  const current = audio ? audio.playbackRate : 1;
+  const nextIdx = (rates.indexOf(current) + 1) % rates.length;
+  const nextRate = rates[nextIdx];
+  if (audio) audio.playbackRate = nextRate;
+  btn.textContent = `${nextRate}x`;
+}
+
+function seekAudioTrack(event, track) {
+  const card = track && track.closest('.media-audio-card');
+  if (!card) return;
+  const audio = card.querySelector('.audio-native-el');
+  if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  const rect = track.getBoundingClientRect();
+  if (!rect || rect.width <= 0) return;
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * audio.duration;
+  syncAudioPlayerProgress(audio);
+}
+
+function initAudioPlayerMeta(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const label = card.querySelector('.audio-time-label');
+  if (label && Number.isFinite(audio.duration)) {
+    label.textContent = formatAudioDuration(audio.duration);
+  }
+}
+
+function syncAudioPlayerProgress(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const label = card.querySelector('.audio-time-label');
+  const bars = card.querySelectorAll('.audio-wave-bar');
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+  const ratio = duration > 0 ? Math.min(1, audio.currentTime / duration) : 0;
+  if (label) {
+    label.textContent = duration > 0
+      ? `${formatAudioDuration(audio.currentTime)} / ${formatAudioDuration(duration)}`
+      : formatAudioDuration(audio.currentTime);
+  }
+  if (bars && bars.length) {
+    const activeCount = Math.round(ratio * bars.length);
+    bars.forEach((bar, idx) => {
+      if (idx < activeCount) bar.classList.add('played');
+      else bar.classList.remove('played');
+    });
+  }
+}
+
+function resetAudioPlayerUI(audio) {
+  const card = audio && audio.closest('.media-audio-card');
+  if (!card) return;
+  const icon = card.querySelector('.audio-play-btn i');
+  if (icon) icon.className = 'fa-solid fa-play';
+  card.querySelectorAll('.audio-wave-bar').forEach(b => b.classList.remove('played'));
+  initAudioPlayerMeta(audio);
 }
 
 // Detección y extracción de videos sociales (YouTube, TikTok, Instagram)
@@ -4941,6 +5742,47 @@ document.addEventListener('DOMContentLoaded', () => {
   // Navegación drill-down: volver del servidor a la lista unificada
   if (el.btnServerBack) {
     el.btnServerBack.addEventListener('click', closeServer);
+  }
+
+  const btnDismissBanner = document.getElementById('btn-dismiss-connection-banner');
+  if (btnDismissBanner) {
+    btnDismissBanner.addEventListener('click', hideConnectionBanner);
+  }
+  const btnRenameContact = document.getElementById('btn-rename-contact');
+  const renameForm = document.getElementById('rename-contact-form');
+  const renameInput = document.getElementById('rename-contact-input');
+  const btnCancelRename = document.getElementById('btn-cancel-rename-contact');
+  if (btnRenameContact && renameForm && renameInput) {
+    btnRenameContact.addEventListener('click', () => {
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      renameInput.value = conv && conv.title ? conv.title : '';
+      renameForm.classList.remove('hidden');
+      renameInput.focus();
+    });
+  }
+  if (btnCancelRename && renameForm) {
+    btnCancelRename.addEventListener('click', () => {
+      renameForm.classList.add('hidden');
+    });
+  }
+  if (renameForm && renameInput) {
+    renameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = renameInput.value.trim();
+      const conv = state.conversations.find(c => c.id === state.activeConversationId);
+      if (!newName || !conv || !conv.contact_id || !window.conduitAPI?.renameContact) return;
+      try {
+        const updated = await window.conduitAPI.renameContact(conv.contact_id, newName);
+        const finalName = (updated && updated.display_name) ? updated.display_name : newName;
+        conv.title = finalName;
+        el.activeChatTitle.textContent = formatConversationTitle(conv);
+        renameForm.classList.add('hidden');
+        state.lastConversationsHash = '';
+        renderConversations();
+      } catch (err) {
+        showConnectionBanner(`No se pudo renombrar el contacto: ${err.message || err}`);
+      }
+    });
   }
 
   window.addEventListener('keydown', (e) => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 	"github.com/cestila/ConduitOmniChat/core/pkg/eventbus"
 	"github.com/cestila/ConduitOmniChat/core/pkg/identity"
@@ -19,6 +21,7 @@ import (
 	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
 	"github.com/cestila/ConduitOmniChat/core/pkg/storage"
 	conduitv1 "github.com/cestila/ConduitOmniChat/sdk/conduitv1"
+	"github.com/cestila/ConduitOmniChat/sdk/pluginsdk"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -132,23 +135,46 @@ type Server struct {
 	historyCooldown map[string]time.Time
 
 	// installer y loader permiten instalar plugins desde GitHub Releases y cargarlos en caliente.
-	installer PluginInstaller
-	loader    PluginLoader
+	installer     PluginInstaller
+	loader        PluginLoader
+	stopper       PluginStopper
+	registry      *pluginmgr.RegistryClient
+	manifestStore *pluginmgr.ManifestStore
+	tuiVersion    string
 }
 
 // PluginInstaller descarga e instala plugins (lo implementa plugininstall.Installer).
 type PluginInstaller interface {
 	Install(ctx context.Context, spec, version string) (plugininstall.Result, error)
+	PrepareUpdate(ctx context.Context, spec, version string) (*plugininstall.PreparedInstall, error)
+	Remove(id string) (string, error)
+	IsManagedPath(binaryPath string) bool
+	Resolve(spec string) (id, repo string, err error)
 }
 
 // PluginLoader lanza un plugin recién instalado sin reiniciar el daemon.
 type PluginLoader func(ctx context.Context, path string) error
+
+// PluginStopper detiene un plugin en ejecución por id.
+type PluginStopper func(id string) error
 
 // SetPluginInstaller inyecta el instalador usado por InstallPlugin.
 func (s *Server) SetPluginInstaller(i PluginInstaller) { s.installer = i }
 
 // SetPluginLoader inyecta el callback que carga en caliente un plugin instalado.
 func (s *Server) SetPluginLoader(l PluginLoader) { s.loader = l }
+
+// SetPluginStopper inyecta el callback que detiene un plugin en ejecución.
+func (s *Server) SetPluginStopper(fn PluginStopper) { s.stopper = fn }
+
+// SetRegistryClient inyecta el cliente del registro remoto de plugins.
+func (s *Server) SetRegistryClient(r *pluginmgr.RegistryClient) { s.registry = r }
+
+// SetManifestStore inyecta el almacén local plugins-manifest.json.
+func (s *Server) SetManifestStore(m *pluginmgr.ManifestStore) { s.manifestStore = m }
+
+// SetTUIVersion establece la versión detectada de conduit-tui para GetStatus.
+func (s *Server) SetTUIVersion(v string) { s.tuiVersion = strings.TrimSpace(v) }
 
 // NewServer inicializa una nueva instancia del servidor gRPC.
 func NewServer(db *storage.DB, bus *eventbus.Bus, graph *identity.Graph, plugins *pluginmgr.Manager) *Server {
@@ -352,21 +378,44 @@ func (s *Server) SendMessage(ctx context.Context, req *conduitv1.SendMessageRequ
 					fmt.Printf("⚠️ Error enviando mensaje a plugin %s: %v\n", pluginName, err)
 					domainMsg.Status = domain.StatusFailed
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:      domainMsg.ID,
+						ConversationId: domainMsg.ConversationID,
+						Status:         string(domain.StatusFailed),
+						Error:          err.Error(),
+					})
 				} else if !resp.Success {
 					fmt.Printf("⚠️ Plugin %s rechazó el envío de mensaje: %s\n", pluginName, resp.ErrorMessage)
 					domainMsg.Status = domain.StatusFailed
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:      domainMsg.ID,
+						ConversationId: domainMsg.ConversationID,
+						Status:         string(domain.StatusFailed),
+						Error:          resp.ErrorMessage,
+					})
 				} else {
 					domainMsg.Status = domain.StatusSent
 					domainMsg.RemoteMessageID = resp.RemoteMessageId
 					_ = s.db.SaveMessage(context.Background(), domainMsg)
-					s.bus.Publish(eventbus.EventMessageStatus, domainMsg)
+					s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+						MessageId:       domainMsg.ID,
+						ConversationId:  domainMsg.ConversationID,
+						Status:          string(domain.StatusSent),
+						RemoteMessageId: domainMsg.RemoteMessageID,
+					})
 				}
 			}()
 		} else {
+			errMsg := fmt.Sprintf("plugin '%s' is not running", pluginName)
 			fmt.Printf("⚠️ No se encontró plugin instanciado para '%s'\n", pluginName)
+			domainMsg.Status = domain.StatusFailed
+			s.bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+				MessageId:      domainMsg.ID,
+				ConversationId: domainMsg.ConversationID,
+				Status:         string(domain.StatusFailed),
+				Error:          errMsg,
+			})
 		}
 	}
 
@@ -482,11 +531,19 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	subUpdated := s.bus.Subscribe(eventbus.EventMessageUpdated)
 	subDeleted := s.bus.Subscribe(eventbus.EventMessageDeleted)
 	subRead := s.bus.Subscribe(eventbus.EventConversationRead)
+	subSync := s.bus.Subscribe(eventbus.EventSyncProgress)
+	subContact := s.bus.Subscribe(eventbus.EventContactUpdated)
+	subStatus := s.bus.Subscribe(eventbus.EventMessageStatus)
+	subChannel := s.bus.Subscribe(eventbus.EventChannelConnected)
 	defer s.bus.Unsubscribe(eventbus.EventMessageReceived, subReceived)
 	defer s.bus.Unsubscribe(eventbus.EventMessageSent, subSent)
 	defer s.bus.Unsubscribe(eventbus.EventMessageUpdated, subUpdated)
 	defer s.bus.Unsubscribe(eventbus.EventMessageDeleted, subDeleted)
 	defer s.bus.Unsubscribe(eventbus.EventConversationRead, subRead)
+	defer s.bus.Unsubscribe(eventbus.EventSyncProgress, subSync)
+	defer s.bus.Unsubscribe(eventbus.EventContactUpdated, subContact)
+	defer s.bus.Unsubscribe(eventbus.EventMessageStatus, subStatus)
+	defer s.bus.Unsubscribe(eventbus.EventChannelConnected, subChannel)
 
 	for {
 		select {
@@ -551,6 +608,72 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 					TimestampUnix: ev.Timestamp.Unix(),
 					Payload: &conduitv1.EventEnvelope_ConversationRead{
 						ConversationRead: readEv,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subSync:
+			if syncPayload, ok := ev.Payload.(string); ok {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
+						ChannelStatusUpdate: syncPayload,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subStatus:
+			var statusEv *conduitv1.MessageStatusEvent
+			switch p := ev.Payload.(type) {
+			case *conduitv1.MessageStatusEvent:
+				statusEv = p
+			case *domain.Message:
+				statusEv = &conduitv1.MessageStatusEvent{
+					MessageId:       p.ID,
+					ConversationId:  p.ConversationID,
+					Status:          string(p.Status),
+					RemoteMessageId: p.RemoteMessageID,
+				}
+			}
+			if statusEv != nil {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_MessageStatusUpdated{
+						MessageStatusUpdated: statusEv,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subChannel:
+			if msg, ok := ev.Payload.(string); ok {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
+						ChannelStatusUpdate: msg,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subContact:
+			if contact, ok := ev.Payload.(*domain.Contact); ok && contact != nil {
+				err := stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ContactUpdated{
+						ContactUpdated: &conduitv1.ContactUpdatedEvent{
+							Contact: protoContactFromDomain(contact),
+						},
 					},
 				})
 				if err != nil {
@@ -663,6 +786,7 @@ func protoChannelsFromDomain(channels []domain.ContactChannel) []*conduitv1.Prot
 			ServerId:        ch.ServerID,
 			ParentChannelId: ch.ParentChannelID,
 			ChannelType:     ch.ChannelType,
+			AccountId:       ch.AccountID,
 		})
 	}
 	return protoChannels
@@ -693,6 +817,31 @@ func (s *Server) MergeContacts(ctx context.Context, req *conduitv1.MergeContacts
 
 	return &conduitv1.MergeContactsResponse{
 		MergedContact: protoContactFromDomain(merged),
+	}, nil
+}
+
+// RenameContact actualiza manualmente el nombre visible de un contacto y lo protege contra sobrescrituras de resync.
+func (s *Server) RenameContact(ctx context.Context, req *conduitv1.RenameContactRequest) (*conduitv1.RenameContactResponse, error) {
+	if strings.TrimSpace(req.ContactId) == "" {
+		return nil, status.Error(codes.InvalidArgument, "contact_id is required")
+	}
+	trimmed := strings.TrimSpace(req.DisplayName)
+	if trimmed == "" {
+		return nil, status.Error(codes.InvalidArgument, "display_name is required")
+	}
+	contact, err := s.db.RenameContact(ctx, req.ContactId, trimmed)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "error renaming contact: %v", err)
+	}
+	return &conduitv1.RenameContactResponse{
+		Contact: &conduitv1.ProtoContact{
+			Id:          contact.ID,
+			DisplayName: contact.DisplayName,
+			AvatarUrl:   contact.AvatarURL,
+			Email:       contact.Email,
+			Phone:       contact.Phone,
+			NameLocked:  contact.NameLocked,
+		},
 	}, nil
 }
 
@@ -745,6 +894,207 @@ func (s *Server) SplitChannel(ctx context.Context, req *conduitv1.SplitChannelRe
 	return &conduitv1.SplitChannelResponse{
 		NewContact: protoContactFromDomain(newContact),
 	}, nil
+}
+
+// isNonPersonRemoteID reports whether a remote identifier represents a group, broadcast, newsletter, or forum topic.
+func isNonPersonRemoteID(remoteID string) bool {
+	return strings.Contains(remoteID, "@g.us") ||
+		strings.Contains(remoteID, "@broadcast") ||
+		strings.Contains(remoteID, "@newsletter") ||
+		strings.Contains(remoteID, "_topic_")
+}
+
+// SyncContacts pulls 1:1 contacts from connected plugins and unifies them via the identity graph.
+func (s *Server) SyncContacts(ctx context.Context, req *conduitv1.SyncContactsRequest) (*conduitv1.SyncContactsResponse, error) {
+	return SyncContactsForProvider(ctx, s.db, s.plugins, s.graph, s.bus, req.GetProvider(), req.GetAccountId())
+}
+
+func resolveAccountProvider(accounts []*conduitv1.ProtoAccount, accountID string) string {
+	for _, acc := range accounts {
+		if acc.GetId() == accountID {
+			return providerName(domain.Provider(acc.GetProvider().String()))
+		}
+	}
+	return ""
+}
+
+func resolveCanonicalSyncAccountID(accounts []*conduitv1.ProtoAccount, provider, requestedAccountID string) string {
+	normProv := strings.ToLower(provider)
+	if requestedAccountID != "" {
+		for _, acc := range accounts {
+			if providerName(domain.Provider(acc.GetProvider().String())) == normProv && acc.GetId() == requestedAccountID {
+				return acc.GetId()
+			}
+		}
+		return requestedAccountID
+	}
+
+	var fallback string
+	for _, acc := range accounts {
+		if providerName(domain.Provider(acc.GetProvider().String())) != normProv {
+			continue
+		}
+		if acc.GetStatus() == "connected" {
+			return acc.GetId()
+		}
+		if fallback == "" {
+			fallback = acc.GetId()
+		}
+	}
+	return fallback
+}
+
+// SyncContactsForProvider pulls 1:1 contacts from the target provider (or all providers when empty)
+// and resolves them via the identity graph using canonical account IDs from storage.
+func SyncContactsForProvider(ctx context.Context, db *storage.DB, plugins *pluginmgr.Manager, graph *identity.Graph, bus *eventbus.Bus, provider, requestedAccountID string) (*conduitv1.SyncContactsResponse, error) {
+	if plugins == nil || graph == nil {
+		return &conduitv1.SyncContactsResponse{}, nil
+	}
+
+	var accounts []*conduitv1.ProtoAccount
+	if db != nil {
+		accounts, _ = db.ListAccounts(ctx)
+	}
+
+	targetProvider := strings.ToLower(strings.TrimSpace(provider))
+	if targetProvider == "" && requestedAccountID != "" {
+		if owner := resolveAccountProvider(accounts, requestedAccountID); owner != "" {
+			targetProvider = owner
+		} else if len(accounts) > 0 {
+			return &conduitv1.SyncContactsResponse{}, nil
+		}
+	}
+
+	var instances []*pluginmgr.Instance
+	if targetProvider != "" {
+		if inst, ok := plugins.GetInstance(targetProvider); ok {
+			instances = append(instances, inst)
+		}
+	} else {
+		instances = plugins.ListInstances()
+	}
+
+	var syncedCount int32
+	unifiedContacts := make(map[string]struct{})
+
+	for _, inst := range instances {
+		if inst.RPC == nil {
+			continue
+		}
+		canonicalAccountID := resolveCanonicalSyncAccountID(accounts, inst.Name, requestedAccountID)
+		resp, err := inst.RPC.SyncContacts(ctx, &conduitv1.SyncContactsRequest{
+			Provider:  inst.Name,
+			AccountId: canonicalAccountID,
+		})
+		if err != nil {
+			if status.Code(err) == codes.Unimplemented {
+				log.Printf("⚠️ plugin %s does not implement SyncContacts; skipping", inst.Name)
+				continue
+			}
+			log.Printf("⚠️ SyncContacts failed for plugin %s: %v", inst.Name, err)
+			continue
+		}
+		if resp.GetError() != "" {
+			log.Printf("⚠️ plugin %s SyncContacts reported error: %s", inst.Name, resp.GetError())
+		}
+
+		for _, pc := range resp.GetContacts() {
+			remoteID := strings.TrimSpace(pc.GetRemoteId())
+			if remoteID == "" || isNonPersonRemoteID(remoteID) {
+				continue
+			}
+
+			accountID := canonicalAccountID
+			if accountID == "" {
+				accountID = pc.GetAccountId()
+			}
+			displayName := pc.GetDisplayName()
+			if displayName == "" {
+				displayName = pc.GetHandle()
+			}
+			if displayName == "" {
+				displayName = remoteID
+			}
+
+			contact, _, err := graph.ResolveOrLinkChannel(
+				ctx,
+				domain.Provider(inst.Name),
+				accountID,
+				remoteID,
+				pc.GetHandle(),
+				displayName,
+				pc.GetAvatarUrl(),
+				identity.Hints{
+					Phone: pc.GetPhone(),
+					Email: pc.GetEmail(),
+				},
+			)
+			if err != nil {
+				log.Printf("⚠️ failed to link synced contact %q (%s): %v", displayName, inst.Name, err)
+				continue
+			}
+
+			syncedCount++
+			if contact != nil {
+				unifiedContacts[contact.ID] = struct{}{}
+				if bus != nil {
+					bus.Publish(eventbus.EventContactUpdated, contact)
+				}
+			}
+		}
+	}
+
+	return &conduitv1.SyncContactsResponse{
+		SyncedCount:  syncedCount,
+		UnifiedCount: int32(len(unifiedContacts)),
+	}, nil
+}
+
+// StartChat creates or activates a 1:1 conversation for a contact using the selected channel.
+func (s *Server) StartChat(ctx context.Context, req *conduitv1.StartChatRequest) (*conduitv1.StartChatResponse, error) {
+	if req.GetContactId() == "" || req.GetChannelId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contact_id and channel_id are required")
+	}
+
+	channel, err := s.db.GetChannelByID(ctx, req.GetChannelId())
+	if err != nil || channel == nil {
+		return nil, status.Error(codes.InvalidArgument, "channel not found")
+	}
+	if channel.ContactID != req.GetContactId() {
+		return nil, status.Error(codes.InvalidArgument, "channel does not belong to contact")
+	}
+
+	contact, err := s.db.GetContactByID(ctx, req.GetContactId())
+	if err != nil || contact == nil {
+		return nil, status.Error(codes.NotFound, "contact not found")
+	}
+
+	chanID := channel.ID
+	contactID := contact.ID
+	if err := s.db.EnsureConversation(ctx, &domain.Conversation{
+		ID:              contact.ID,
+		ContactID:       &contactID,
+		IsGroup:         false,
+		Title:           contact.DisplayName,
+		ActiveChannelID: &chanID,
+		ChannelType:     channel.ChannelType,
+		AvatarURL:       contact.AvatarURL,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "error ensuring conversation: %v", err)
+	}
+	if err := s.db.SetConversationActiveChannel(ctx, contact.ID, channel.ID); err != nil {
+		return nil, status.Errorf(codes.Internal, "error setting active channel: %v", err)
+	}
+
+	conv, err := s.db.GetConversationByID(ctx, contact.ID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "error loading conversation: %v", err)
+	}
+	if conv.Provider == "" {
+		conv.Provider = string(channel.Provider)
+	}
+
+	return &conduitv1.StartChatResponse{Conversation: conv}, nil
 }
 
 // ListAccounts lista todas las cuentas configuradas.
@@ -873,79 +1223,6 @@ func (s *Server) DisconnectAccount(ctx context.Context, req *conduitv1.Disconnec
 	return &conduitv1.DisconnectAccountResponse{Success: true}, nil
 }
 
-// ListPlugins devuelve los plugins descubiertos (instalados) seguidos de los oficiales del catálogo que no lo están.
-func (s *Server) ListPlugins(ctx context.Context, req *conduitv1.ListPluginsRequest) (*conduitv1.ListPluginsResponse, error) {
-	plugins := []*conduitv1.ProtoPluginInfo{}
-	seen := map[string]bool{}
-	if s.plugins != nil {
-		for _, d := range s.plugins.Discovered() {
-			m := d.Manifest
-			id := m.GetId()
-			seen[id] = true
-			repo := ""
-			if entry, ok := pluginmgr.CatalogEntryFor(id); ok {
-				repo = entry.Repository
-			}
-			plugins = append(plugins, &conduitv1.ProtoPluginInfo{
-				Id:          id,
-				Name:        m.GetDisplayName(),
-				Description: m.GetDescription(),
-				Version:     m.GetVersion(),
-				Author:      m.GetAuthor(),
-				IsInstalled: true,
-				IsEnabled:   s.db.GetSetting(ctx, fmt.Sprintf("plugin_%s_enabled", id), "true") == "true",
-				Manifest:    m,
-				Path:        d.Path,
-				Repository:  repo,
-			})
-		}
-	}
-	for _, entry := range pluginmgr.Catalog {
-		if seen[entry.ID] {
-			continue
-		}
-		plugins = append(plugins, &conduitv1.ProtoPluginInfo{
-			Id:          entry.ID,
-			Name:        entry.Name,
-			Description: entry.Description,
-			Repository:  entry.Repository,
-		})
-	}
-	return &conduitv1.ListPluginsResponse{Plugins: plugins}, nil
-}
-
-// InstallPlugin instala el último release de un plugin oficial del catálogo, lo habilita y,
-// si hay un cargador inyectado, lo lanza en caliente. Solo se aceptan ids del catálogo.
-func (s *Server) InstallPlugin(ctx context.Context, req *conduitv1.InstallPluginRequest) (*conduitv1.InstallPluginResponse, error) {
-	fail := func(msg string) (*conduitv1.InstallPluginResponse, error) {
-		return &conduitv1.InstallPluginResponse{Success: false, Message: msg}, nil
-	}
-	if _, ok := pluginmgr.CatalogEntryFor(req.PluginId); !ok {
-		return fail(fmt.Sprintf("plugin %q is not an official plugin; use `conduitd plugin install owner/repo` for third-party plugins", req.PluginId))
-	}
-	if s.installer == nil {
-		return fail("plugin installation is not available in this daemon")
-	}
-	res, err := s.installer.Install(ctx, req.PluginId, "")
-	if err != nil {
-		return fail(err.Error())
-	}
-	_ = s.db.SetSetting(ctx, fmt.Sprintf("plugin_%s_enabled", res.ID), "true")
-
-	msg := fmt.Sprintf("Plugin '%s' %s installed at %s", res.ID, res.Version, res.Path)
-	switch {
-	case s.loader == nil:
-		msg += "; restart conduitd to load it"
-	default:
-		if err := s.loader(ctx, res.Path); err != nil {
-			msg += fmt.Sprintf("; it could not be loaded (%v), restart conduitd to load it", err)
-		} else {
-			msg += " and loaded"
-		}
-	}
-	return &conduitv1.InstallPluginResponse{Success: true, Message: msg}, nil
-}
-
 // TogglePlugin activa o desactiva un plugin de forma persistente.
 func (s *Server) TogglePlugin(ctx context.Context, req *conduitv1.TogglePluginRequest) (*conduitv1.TogglePluginResponse, error) {
 	key := fmt.Sprintf("plugin_%s_enabled", req.PluginId)
@@ -975,8 +1252,10 @@ func (s *Server) UpdateSettings(ctx context.Context, req *conduitv1.UpdateSettin
 func (s *Server) GetStatus(ctx context.Context, req *conduitv1.GetStatusRequest) (*conduitv1.GetStatusResponse, error) {
 	uptime := int64(time.Since(s.startTime).Seconds())
 	return &conduitv1.GetStatusResponse{
-		CoreVersion:   "0.1.0-alpha",
-		UptimeSeconds: uptime,
+		CoreVersion:     buildinfo.Version,
+		ProtocolVersion: pluginsdk.ProtocolVersion,
+		TuiVersion:      s.tuiVersion,
+		UptimeSeconds:   uptime,
 		ChannelStatuses: map[string]string{
 			"storage":  "connected (sqlite fts5)",
 			"bus":      "active",

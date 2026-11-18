@@ -11,7 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        version = "0.1.2";
+        version = "0.2.0";
 
         # -------------------------------------------------------------
         # 1. Official Precompiled Binary Release (Default)
@@ -112,6 +112,14 @@ DESKTOP
 
           subPackages = [ "cmd/conduitd" ];
 
+          ldflags = [
+            "-s"
+            "-w"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Version=v${version}-dev"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Commit=${self.shortRev or self.dirtyShortRev or "nix"}"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Date=${self.lastModifiedDate or "unknown"}"
+          ];
+
           meta = with pkgs.lib; {
             description = "Background daemon for ConduitOmniChat (Built from source)";
             homepage = "https://github.com/cestila/ConduitOmniChat";
@@ -137,7 +145,7 @@ DESKTOP
                 base != ".git";
           };
 
-          npmDepsHash = "sha256-TnbeThxfjtyvzu0yMzS5WCmwfB3SrBPezT9Mj2ywARM=";
+          npmDepsHash = "sha256-BSlQJJ2drJExrv3eyZr+X0SPzlqZ0tMUpI15wg0Q6kQ=";
           dontNpmBuild = true;
 
           env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";

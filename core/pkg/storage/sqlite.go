@@ -21,23 +21,25 @@ type DB struct {
 
 // NewDB inicializa o abre la base de datos SQLite y ejecuta las migraciones DDL.
 func NewDB(dbPath string) (*DB, error) {
-	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("no se pudo crear el directorio de la base de datos: %w", err)
+	if dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file:") {
+		dir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("no se pudo crear el directorio de la base de datos: %w", err)
+		}
 	}
 
-	conn, err := sql.Open("sqlite", dbPath)
+	dsn := sqliteDSN(dbPath)
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error al abrir base de datos sqlite: %w", err)
 	}
 
-	// modernc.org/sqlite con WAL mode necesita que busy_timeout esté configurado en el DSN
-	// o que la conexión no se bloquee a sí misma en iteraciones sobre rows activas.
-	// Limitar MaxOpenConns a 10 y permitir un busy_timeout generoso evita SQLITE_BUSY.
+	// En modernc.org/sqlite los pragmas por Exec solo aplican a una conexión del pool;
+	// configurarlos en el DSN garantiza busy_timeout y WAL en todas las conexiones.
 	conn.SetMaxOpenConns(10)
 	conn.SetMaxIdleConns(5)
 
-	// Configurar pragmas para concurrencia WAL sin bloqueos
+	// Fallback explícito para :memory: o DSNs especiales
 	_, _ = conn.Exec("PRAGMA journal_mode = WAL;")
 	_, _ = conn.Exec("PRAGMA busy_timeout = 10000;")
 	_, _ = conn.Exec("PRAGMA synchronous = NORMAL;")
@@ -49,6 +51,17 @@ func NewDB(dbPath string) (*DB, error) {
 	}
 
 	return db, nil
+}
+
+func sqliteDSN(dbPath string) string {
+	if dbPath == "" || dbPath == ":memory:" {
+		return dbPath
+	}
+	pragmas := "_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	if strings.Contains(dbPath, "?") {
+		return dbPath + "&" + pragmas
+	}
+	return dbPath + "?" + pragmas
 }
 
 // Close cierra la conexión.
@@ -69,6 +82,7 @@ func (d *DB) migrate() error {
 		avatar_url TEXT,
 		email TEXT,
 		phone TEXT,
+		name_locked INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -77,11 +91,12 @@ func (d *DB) migrate() error {
 		id TEXT PRIMARY KEY,
 		contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
 		provider TEXT NOT NULL,
+		account_id TEXT NOT NULL DEFAULT '',
 		remote_id TEXT NOT NULL,
 		handle TEXT,
 		is_preferred BOOLEAN DEFAULT FALSE,
 		metadata TEXT,
-		UNIQUE(provider, remote_id)
+		UNIQUE(provider, account_id, remote_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS conversations (
@@ -168,6 +183,7 @@ func (d *DB) migrate() error {
 	_, _ = d.conn.Exec("ALTER TABLE conversations ADD COLUMN position INTEGER DEFAULT 0;")
 	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN email TEXT;")
 	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN phone TEXT;")
+	_, _ = d.conn.Exec("ALTER TABLE contacts ADD COLUMN name_locked INTEGER NOT NULL DEFAULT 0;")
 	// Remitente remoto de cada mensaje (WhatsApp exige el participante para marcar leídos en grupos)
 	// y marca de leído local todavía no confirmado por el proveedor.
 	_, _ = d.conn.Exec("ALTER TABLE messages ADD COLUMN sender_remote_id TEXT;")
@@ -185,6 +201,15 @@ func (d *DB) migrate() error {
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_conversations_last_msg ON conversations(last_message_at DESC);")
 	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);")
 
+	if err := d.EnsureAccountAndSettingsTables(); err != nil {
+		return err
+	}
+
+	if err := d.migrateContactChannelsAccountID(); err != nil {
+		return fmt.Errorf("error migrando account_id en contact_channels: %w", err)
+	}
+	_, _ = d.conn.Exec("CREATE INDEX IF NOT EXISTS idx_contact_channels_contact ON contact_channels(contact_id);")
+
 	// Reparar temas de foro en bases existentes que hayan quedado con channel_type='group' o título pisado por el servidor
 	_, _ = d.conn.Exec(`
 		UPDATE conversations
@@ -200,6 +225,14 @@ func (d *DB) migrate() error {
 		  AND (title = server_name OR title = '' OR title = id);
 	`)
 
+	if err := d.purgeTopicContacts(); err != nil {
+		fmt.Printf("[storage] advertencia purgando contactos de temas: %v\n", err)
+	}
+
+	if _, err := d.CleanupNonPersonContacts(context.Background()); err != nil {
+		fmt.Printf("[storage] advertencia limpiando contactos no-persona: %v\n", err)
+	}
+
 	if err := d.cleanupAndMergeWhatsAppLIDs(); err != nil {
 		fmt.Printf("[storage] advertencia en migración y unificación de LIDs: %v\n", err)
 	}
@@ -211,6 +244,113 @@ func (d *DB) migrate() error {
 	}
 
 	return d.EnsureAccountAndSettingsTables()
+}
+
+// migrateContactChannelsAccountID reconstruye contact_channels en bases existentes para añadir
+// account_id y actualizar la restricción única a UNIQUE(provider, account_id, remote_id) sin pérdida de datos.
+func (d *DB) migrateContactChannelsAccountID() error {
+	rows, err := d.conn.Query("PRAGMA table_info(contact_channels);")
+	if err != nil {
+		return err
+	}
+	hasAccountID := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err == nil {
+			if name == "account_id" {
+				hasAccountID = true
+			}
+		}
+	}
+	rows.Close()
+	if !hasAccountID {
+		tx, err := d.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		stmts := []string{
+			`CREATE TABLE contact_channels_new (
+			id TEXT PRIMARY KEY,
+			contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			account_id TEXT NOT NULL DEFAULT '',
+			remote_id TEXT NOT NULL,
+			handle TEXT,
+			is_preferred BOOLEAN DEFAULT FALSE,
+			metadata TEXT,
+			UNIQUE(provider, account_id, remote_id)
+		);`,
+			`INSERT INTO contact_channels_new (id, contact_id, provider, account_id, remote_id, handle, is_preferred, metadata)
+		 SELECT id, contact_id, provider, '', remote_id, handle, is_preferred, metadata FROM contact_channels;`,
+			`DROP TABLE contact_channels;`,
+			`ALTER TABLE contact_channels_new RENAME TO contact_channels;`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+
+	return d.backfillContactChannelsAccountID()
+}
+
+// backfillContactChannelsAccountID assigns legacy contact_channels rows with empty account_id
+// to the primary (connected or first) account for that provider when one exists.
+func (d *DB) backfillContactChannelsAccountID() error {
+	accRows, err := d.conn.Query(`
+		SELECT id, LOWER(provider)
+		FROM accounts
+		ORDER BY CASE WHEN status = 'connected' THEN 0 ELSE 1 END, created_at ASC
+	`)
+	if err != nil {
+		return err
+	}
+	primaryByProvider := make(map[string]string)
+	for accRows.Next() {
+		var id, prov string
+		if err := accRows.Scan(&id, &prov); err != nil {
+			accRows.Close()
+			return err
+		}
+		if prov != "" && id != "" {
+			if _, exists := primaryByProvider[prov]; !exists {
+				primaryByProvider[prov] = id
+			}
+		}
+	}
+	if err := accRows.Err(); err != nil {
+		accRows.Close()
+		return err
+	}
+	accRows.Close()
+
+	for prov, accID := range primaryByProvider {
+		if _, err := d.conn.Exec(`
+			UPDATE contact_channels
+			SET account_id = ?
+			WHERE provider = ?
+			  AND account_id = ''
+			  AND NOT EXISTS (
+				SELECT 1 FROM contact_channels cc2
+				WHERE cc2.provider = contact_channels.provider
+				  AND cc2.account_id = ?
+				  AND cc2.remote_id = contact_channels.remote_id
+			  )
+		`, accID, prov, accID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cleanupAndMergeWhatsAppLIDs unifica contactos y conversaciones duplicadas entre canales @lid y @s.whatsapp.net,
@@ -722,4 +862,162 @@ func (d *DB) SearchMessages(ctx context.Context, query string, limit int) ([]dom
 		results = append(results, m)
 	}
 	return results, nil
+}
+
+// purgeTopicContacts removes misclassified forum topic contacts ("Tema ...")
+// created by earlier syncs and converts their conversations into forum channels.
+func (d *DB) purgeTopicContacts() error {
+	rows, err := d.conn.Query(`
+		SELECT id, coalesce(contact_id, ''), provider, remote_id
+		FROM contact_channels
+		WHERE remote_id LIKE '%_topic_%';
+	`)
+	if err != nil {
+		return err
+	}
+	type topicChan struct {
+		id        string
+		contactID string
+		provider  string
+		remoteID  string
+	}
+	var chans []topicChan
+	for rows.Next() {
+		var tc topicChan
+		if scanErr := rows.Scan(&tc.id, &tc.contactID, &tc.provider, &tc.remoteID); scanErr == nil {
+			chans = append(chans, tc)
+		}
+	}
+	rows.Close()
+
+	for _, tc := range chans {
+		idx := strings.Index(tc.remoteID, "_topic_")
+		if idx <= 0 {
+			continue
+		}
+		serverID := tc.remoteID[:idx]
+		canonicalID := tc.provider + ":" + tc.remoteID
+
+		var canonicalExists int
+		_ = d.conn.QueryRow(`SELECT COUNT(*) FROM conversations WHERE id = ?`, canonicalID).Scan(&canonicalExists)
+
+		// Find any misclassified DM conversations linked to this topic contact or channel.
+		convRows, convErr := d.conn.Query(`
+			SELECT id FROM conversations
+			WHERE active_channel_id = ? OR (? <> '' AND contact_id = ?)
+		`, tc.id, tc.contactID, tc.contactID)
+		var convIDs []string
+		if convErr == nil {
+			for convRows.Next() {
+				var cid string
+				if convRows.Scan(&cid) == nil {
+					convIDs = append(convIDs, cid)
+				}
+			}
+			convRows.Close()
+		}
+
+		for _, cid := range convIDs {
+			if cid == canonicalID {
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = coalesce(nullif(server_id, ''), ?),
+					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					WHERE id = ?
+				`, serverID, serverID, cid)
+				continue
+			}
+			if canonicalExists > 0 {
+				_, _ = d.conn.Exec(`UPDATE OR IGNORE messages SET conversation_id = ? WHERE conversation_id = ?`, canonicalID, cid)
+				_, _ = d.conn.Exec(`DELETE FROM conversations WHERE id = ?`, cid)
+			} else {
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = coalesce(nullif(server_id, ''), ?),
+					    parent_channel_id = coalesce(nullif(parent_channel_id, ''), ?)
+					WHERE id = ?
+				`, serverID, serverID, cid)
+			}
+		}
+
+		if tc.contactID != "" {
+			_, _ = d.conn.Exec(`UPDATE contact_channels SET contact_id = '' WHERE id = ?`, tc.id)
+			var remaining int
+			_ = d.conn.QueryRow(`SELECT COUNT(*) FROM contact_channels WHERE contact_id = ?`, tc.contactID).Scan(&remaining)
+			if remaining == 0 {
+				_, _ = d.conn.Exec(`DELETE FROM contacts WHERE id = ?`, tc.contactID)
+			}
+		}
+	}
+
+	// Repair any topic conversations missing or having contaminated server_id / parent_channel_id / is_group.
+	topicConvRows, err := d.conn.Query(`
+		SELECT id FROM conversations
+		WHERE id LIKE '%_topic_%'
+		  AND (coalesce(server_id, '') = '' OR server_id LIKE '%_topic_%' OR parent_channel_id LIKE '%_topic_%' OR is_group = 0 OR contact_id IS NOT NULL)
+	`)
+	if err == nil {
+		var ids []string
+		for topicConvRows.Next() {
+			var id string
+			if topicConvRows.Scan(&id) == nil {
+				ids = append(ids, id)
+			}
+		}
+		topicConvRows.Close()
+		for _, id := range ids {
+			raw := id
+			if colon := strings.Index(raw, ":"); colon >= 0 {
+				raw = raw[colon+1:]
+			}
+			if idx := strings.Index(raw, "_topic_"); idx > 0 {
+				serverID := raw[:idx]
+				_, _ = d.conn.Exec(`
+					UPDATE conversations
+					SET is_group = 1,
+					    contact_id = NULL,
+					    channel_type = 'forum',
+					    server_id = ?,
+					    parent_channel_id = ?
+					WHERE id = ?
+				`, serverID, serverID, id)
+			}
+		}
+	}
+
+	// Restore real topic names from contact_channels.handle when conversations.title fell back to "Tema ...".
+	_, _ = d.conn.Exec(`
+		UPDATE conversations
+		SET title = (
+			SELECT cc.handle
+			FROM contact_channels cc
+			WHERE cc.id = conversations.active_channel_id
+		)
+		WHERE id LIKE '%_topic_%'
+		  AND title LIKE 'Tema %'
+		  AND EXISTS (
+			SELECT 1
+			FROM contact_channels cc
+			WHERE cc.id = conversations.active_channel_id
+			  AND coalesce(cc.handle, '') <> ''
+			  AND cc.handle NOT LIKE 'Tema %'
+			  AND cc.handle <> coalesce(conversations.server_name, '')
+			  AND cc.handle <> cc.remote_id
+		  );
+	`)
+
+	// Clean up orphaned "Tema ..." contacts that have no remaining channels.
+	_, _ = d.conn.Exec(`
+		DELETE FROM contacts
+		WHERE display_name LIKE 'Tema %'
+		  AND NOT EXISTS (SELECT 1 FROM contact_channels cc WHERE cc.contact_id = contacts.id);
+	`)
+
+	return nil
 }

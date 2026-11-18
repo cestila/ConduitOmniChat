@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -42,11 +43,28 @@ func main() {
 	execPath, _ := os.Executable()
 	baseDir := filepath.Dir(execPath)
 	cwd, _ := os.Getwd()
-	pluginDirs := pluginmgr.SearchDirs(os.Getenv("CONDUIT_PLUGIN_DIR"), dataDir, baseDir, cwd)
+	envPluginDir := os.Getenv("CONDUIT_PLUGIN_DIR")
+	pluginDirs := pluginmgr.SearchDirs(envPluginDir, dataDir, baseDir, cwd)
 
-	// Subcomandos (plugin install/list/remove, help): terminan antes de arrancar el daemon.
-	cliInstaller := plugininstall.New(filepath.Join(dataDir, "plugins"))
-	if handled, code := runCLI(os.Args[1:], os.Stdout, os.Stderr, cliDeps{Installer: cliInstaller, PluginDirs: pluginDirs}); handled {
+	// En perfil de testing (CONDUIT_PLUGIN_DIR), instalar/actualizar/desinstalar en esa carpeta
+	// para no pisar los plugins del sistema en ~/.local/share/conduit/plugins.
+	installPluginDir := filepath.Join(dataDir, "plugins")
+	if envPluginDir != "" {
+		if parts := filepath.SplitList(envPluginDir); len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			installPluginDir = strings.TrimSpace(parts[0])
+		}
+	}
+
+	// Subcomandos (plugin install/list/remove/check/update, help): terminan antes de arrancar el daemon.
+	cliInstaller := plugininstall.New(installPluginDir)
+	manifestStore := pluginmgr.NewManifestStore(filepath.Join(dataDir, "plugins-manifest.json"))
+	registryClient := pluginmgr.NewRegistryClient("", "", pluginmgr.DefaultRegistryTTL)
+	if handled, code := runCLI(os.Args[1:], os.Stdout, os.Stderr, cliDeps{
+		Installer:  cliInstaller,
+		PluginDirs: pluginDirs,
+		Registry:   registryClient,
+		Manifest:   manifestStore,
+	}); handled {
 		os.Exit(code)
 	}
 
@@ -80,6 +98,9 @@ func main() {
 		return db.GetSetting(context.Background(), "plugin_"+id+"_enabled", "true") == "true"
 	}
 
+	daemonCtx, daemonCancel := context.WithCancel(context.Background())
+	defer daemonCancel()
+
 	// loadPlugin lanza un ejecutable de plugin, lo registra y arranca su loop de eventos.
 	// Lo usan el arranque del daemon y la carga en caliente del RPC InstallPlugin.
 	loadPlugin := func(ctx context.Context, binPath string) error {
@@ -92,7 +113,7 @@ func main() {
 
 		// Escuchar stream de eventos unificado
 		go func(inst *pluginmgr.Instance, plugCfg pluginConfig) {
-			stream, err := inst.RPC.StreamIncomingEvents(context.Background(), &conduitv1.PluginStreamRequest{})
+			stream, err := inst.RPC.StreamIncomingEvents(daemonCtx, &conduitv1.PluginStreamRequest{})
 			if err != nil {
 				log.Printf("⚠️ Error iniciando stream de eventos %s: %v", plugCfg.Name, err)
 				return
@@ -100,6 +121,17 @@ func main() {
 			for {
 				ev, err := stream.Recv()
 				if err != nil {
+					if daemonCtx.Err() != nil {
+						// Apagado normal del daemon: conservar el estado 'connected' para reanudar al reiniciar.
+						break
+					}
+					if cur, ok := pluginManager.GetInstance(plugCfg.Name); !ok || cur != inst {
+						// Plugin detenido intencionalmente (por ejemplo, durante una actualización en caliente).
+						break
+					}
+					log.Printf("⚠️ Stream de eventos del plugin %s cerrado: %v", plugCfg.Name, err)
+					_ = db.UpdateAccountsStatusByProvider(context.Background(), plugCfg.Name, "disconnected", err.Error())
+					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+err.Error())
 					break
 				}
 				switch ev.EventType {
@@ -132,13 +164,55 @@ func main() {
 					applyChannelReadyForProvider(context.Background(), db, plugCfg.Proto, ev)
 					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":connected")
 					// Recupera lo que llegó mientras el daemon no corría.
-					go catchUpRecentMessages(db, pluginManager, plugCfg.Provider, 15)
+					go catchUpRecentMessages(db, pluginManager, bus, plugCfg.Provider, 15)
 					// Reintenta los leídos que no pudieron llegar al proveedor mientras estaba caído.
 					go rpc.FlushPendingReadSyncForProvider(context.Background(), db, pluginManager, plugCfg.Provider)
+					// Sincroniza los contactos de la libreta del proveedor al conectar.
+					go func(providerName string) {
+						syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+						if _, err := rpc.SyncContactsForProvider(syncCtx, db, pluginManager, graph, bus, providerName, ""); err != nil {
+							log.Printf("⚠️ Error sincronizando contactos de %s al conectar: %v", providerName, err)
+						}
+					}(plugCfg.Name)
+
+				case "channel.disconnected":
+					reason := strings.TrimSpace(ev.Body)
+					log.Printf("⚠️ Canal %s desconectado: %s", plugCfg.Name, reason)
+					_ = db.UpdateAccountsStatusByProvider(context.Background(), plugCfg.Name, "disconnected", reason)
+					if reason != "" {
+						bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+reason)
+					} else {
+						bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected")
+					}
+
+				case "message.status_updated", "message.delivered", "message.read":
+					target := domain.StatusDelivered
+					switch ev.EventType {
+					case "message.read":
+						target = domain.StatusRead
+					case "message.status_updated":
+						switch domain.MessageStatus(strings.ToLower(strings.TrimSpace(ev.Body))) {
+						case domain.StatusSent, domain.StatusDelivered, domain.StatusRead, domain.StatusFailed:
+							target = domain.MessageStatus(strings.ToLower(strings.TrimSpace(ev.Body)))
+						default:
+							target = ""
+						}
+					}
+					if target != "" && ev.RemoteMessageId != "" {
+						if msgID, convID, updated, err := db.UpdateOutgoingMessageStatusByRemoteID(context.Background(), plugCfg.Name, ev.RemoteMessageId, target); err == nil && updated {
+							bus.Publish(eventbus.EventMessageStatus, &conduitv1.MessageStatusEvent{
+								MessageId:       msgID,
+								ConversationId:  convID,
+								Status:          string(target),
+								RemoteMessageId: ev.RemoteMessageId,
+							})
+						}
+					}
 
 				case "contact.sync":
-					// Si es un grupo, registrar como conversación independiente directamente SIN tocar la tabla de contactos
-					if ev.Body == "group" || strings.Contains(ev.RemoteSenderId, "@g.us") {
+					// Si es un grupo o tema de foro, registrar como conversación independiente SIN tocar la tabla de contactos
+					if isTopicOrGroupTarget(ev.RemoteSenderId, ev.Body, ev.ServerId, ev.ChannelType) {
 						convID := fmt.Sprintf("%s:%s", plugCfg.Name, ev.RemoteSenderId)
 						// Crear o asegurar el canal para el grupo sin contact_id
 						channelID := uuid.New().String()
@@ -156,6 +230,20 @@ func main() {
 							})
 						}
 
+						serverID := extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
+						parentID := ev.ParentChannelId
+						chanType := ev.ChannelType
+						if strings.Contains(ev.RemoteSenderId, "_topic_") {
+							if parentID == "" {
+								parentID = serverID
+							}
+							if chanType == "" {
+								chanType = "forum"
+							}
+						} else if chanType == "" {
+							chanType = "group"
+						}
+
 						_ = db.EnsureConversation(context.Background(), &domain.Conversation{
 							ID:              convID,
 							ContactID:       nil,
@@ -163,7 +251,10 @@ func main() {
 							Title:           ev.SenderName,
 							LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 							ActiveChannelID: &channelID,
-							ChannelType:     "group",
+							ServerID:        serverID,
+							ServerName:      ev.ServerName,
+							ParentChannelID: parentID,
+							ChannelType:     chanType,
 							AvatarURL:       ev.AvatarUrl,
 						})
 					} else {
@@ -172,7 +263,8 @@ func main() {
 						if displayName == "" {
 							displayName = ev.RemoteSenderId
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						accountID := resolveAccountIDForProvider(context.Background(), db, plugCfg.Proto)
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, accountID, ev.RemoteSenderId, ev.Body, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo registrar el contacto %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {
@@ -192,6 +284,7 @@ func main() {
 								ChannelType:     ev.ChannelType,
 								AvatarURL:       contact.AvatarURL,
 							})
+							bus.Publish(eventbus.EventContactUpdated, contact)
 						}
 					}
 
@@ -221,6 +314,13 @@ func main() {
 					// calcula una nueva solo si el canal no la tiene (nuevo o base anterior).
 					position := channelPositionFor(context.Background(), db, convID, ev.ServerId)
 
+					convServerID := ev.ServerId
+					convParentID := ev.ParentChannelId
+					if strings.Contains(ev.RemoteSenderId, "_topic_") {
+						convServerID = extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
+						convParentID = extractTopicServerID(ev.RemoteSenderId, ev.ParentChannelId)
+					}
+
 					conv := &domain.Conversation{
 						ID:              convID,
 						ContactID:       nil,
@@ -228,9 +328,9 @@ func main() {
 						Title:           channelTitle,
 						LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 						ActiveChannelID: &channelID,
-						ServerID:        ev.ServerId,
+						ServerID:        convServerID,
 						ServerName:      ev.ServerName,
-						ParentChannelID: ev.ParentChannelId,
+						ParentChannelID: convParentID,
 						ChannelType:     ev.ChannelType,
 						Position:        position,
 					}
@@ -335,7 +435,7 @@ func main() {
 						}
 						continue
 					}
-					isGroup := strings.Contains(chatTarget, "@g.us") || ev.ServerId != ""
+					isGroup := isTopicOrGroupTarget(chatTarget, "", ev.ServerId, ev.ChannelType)
 
 					var convID string
 					var channelID string
@@ -384,8 +484,17 @@ func main() {
 
 						convTitle := groupTitle
 
+						serverID := extractTopicServerID(chatTarget, ev.ServerId)
+						parentID := ev.ParentChannelId
 						chanType := ev.ChannelType
-						if chanType == "" {
+						if strings.Contains(chatTarget, "_topic_") {
+							if parentID == "" {
+								parentID = serverID
+							}
+							if chanType == "" {
+								chanType = "forum"
+							}
+						} else if chanType == "" {
 							chanType = "group"
 						}
 
@@ -396,9 +505,9 @@ func main() {
 							Title:           convTitle,
 							LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
 							ActiveChannelID: &channelID,
-							ServerID:        ev.ServerId,
+							ServerID:        serverID,
 							ServerName:      ev.ServerName,
-							ParentChannelID: ev.ParentChannelId,
+							ParentChannelID: parentID,
 							ChannelType:     chanType,
 							AvatarURL:       ev.AvatarUrl,
 						})
@@ -411,7 +520,8 @@ func main() {
 						if displayName == "" {
 							displayName = chatTarget
 						}
-						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
+						accountID := resolveAccountIDForProvider(context.Background(), db, plugCfg.Proto)
+						contact, channel, err := graph.ResolveOrLinkChannel(context.Background(), plugCfg.Provider, accountID, chatTarget, chatTarget, displayName, ev.AvatarUrl, identity.Hints{Phone: ev.IdentityPhone, Email: ev.IdentityEmail})
 						if err != nil {
 							log.Printf("⚠️ No se pudo resolver el contacto del mensaje %q (%s): %v", displayName, plugCfg.Name, err)
 						} else if channel != nil {
@@ -428,6 +538,7 @@ func main() {
 								ChannelType:     ev.ChannelType,
 								AvatarURL:       contact.AvatarURL,
 							})
+							bus.Publish(eventbus.EventContactUpdated, contact)
 						}
 					}
 
@@ -620,6 +731,10 @@ func main() {
 	rpcService := rpc.NewServer(db, bus, graph, pluginManager)
 	rpcService.SetDownloader(downloader)
 	rpcService.SetPluginInstaller(cliInstaller)
+	rpcService.SetPluginStopper(pluginManager.StopPlugin)
+	rpcService.SetRegistryClient(registryClient)
+	rpcService.SetManifestStore(manifestStore)
+	rpcService.SetTUIVersion(probeTUIVersion(baseDir))
 	// El contexto de la petición RPC termina con ella; el plugin debe vivir con el daemon.
 	rpcService.SetPluginLoader(func(_ context.Context, path string) error {
 		return loadPlugin(context.Background(), path)
@@ -659,9 +774,62 @@ func main() {
 
 	fmt.Println("⚡ Conduit Core listo. Presiona Ctrl+C para detener.")
 	<-stop
+	daemonCancel()
 
 	fmt.Println("\n🛑 Deteniendo ConduitOmniChat Daemon limpiamente...")
 	grpcServer.GracefulStop()
 	_, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+}
+
+// isTopicOrGroupTarget reports whether a remote target represents a group or forum topic
+// rather than a 1-on-1 human contact.
+func isTopicOrGroupTarget(remoteID, body, serverID, channelType string) bool {
+	return body == "group" ||
+		strings.Contains(remoteID, "@g.us") ||
+		strings.Contains(remoteID, "_topic_") ||
+		strings.Contains(remoteID, "@broadcast") ||
+		strings.Contains(remoteID, "@newsletter") ||
+		serverID != "" ||
+		channelType == "forum" ||
+		channelType == "group"
+}
+
+// extractTopicServerID returns explicitServerID if set (stripping any trailing _topic_ suffix),
+// or derives the parent supergroup ID from a "<serverID>_topic_<topicID>" remote identifier.
+func extractTopicServerID(remoteID, explicitServerID string) string {
+	if explicitServerID != "" {
+		if idx := strings.Index(explicitServerID, "_topic_"); idx > 0 {
+			return explicitServerID[:idx]
+		}
+		return explicitServerID
+	}
+	if idx := strings.Index(remoteID, "_topic_"); idx > 0 {
+		return remoteID[:idx]
+	}
+	return remoteID
+}
+
+func probeTUIVersion(baseDir string) string {
+	bin := filepath.Join(baseDir, "conduit-tui")
+	if _, err := os.Stat(bin); err != nil {
+		found, err := exec.LookPath("conduit-tui")
+		if err != nil {
+			return ""
+		}
+		bin = found
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	for _, f := range fields {
+		if f != "conduit-tui" {
+			return f
+		}
+	}
+	return ""
 }

@@ -61,3 +61,21 @@ func TestChannelPositionFor(t *testing.T) {
 		t.Fatalf("se esperaba la posición 8, obtuve %d", got)
 	}
 }
+
+func TestTopicTargetDetection(t *testing.T) {
+	if !isTopicOrGroupTarget("-1001234567_topic_780", "", "", "") {
+		t.Fatalf("expected _topic_ remoteID to be detected as group/topic")
+	}
+	if !isTopicOrGroupTarget("12345", "", "", "forum") {
+		t.Fatalf("expected forum channelType to be detected as group/topic")
+	}
+	if isTopicOrGroupTarget("99887766", "", "", "") {
+		t.Fatalf("expected plain user ID not to be detected as group/topic")
+	}
+	if got := extractTopicServerID("-1001234567_topic_780", ""); got != "-1001234567" {
+		t.Fatalf("expected serverID -1001234567, got %q", got)
+	}
+	if got := extractTopicServerID("-1001234567_topic_780", "-100999"); got != "-100999" {
+		t.Fatalf("expected explicit serverID -100999 to take precedence, got %q", got)
+	}
+}

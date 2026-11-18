@@ -239,9 +239,56 @@ class ConduitRpcClient {
     });
   }
 
-  installPlugin(pluginId) {
+  installPlugin(pluginId, version = '') {
     return new Promise((resolve, reject) => {
-      this.client.InstallPlugin({ plugin_id: pluginId }, (err, response) => {
+      this.client.InstallPlugin({
+        plugin_id: pluginId,
+        version: version || ''
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  uninstallPlugin(pluginId) {
+    return new Promise((resolve, reject) => {
+      this.client.UninstallPlugin({ plugin_id: pluginId }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  updatePlugin(pluginId = '', all = false) {
+    return new Promise((resolve, reject) => {
+      this.client.UpdatePlugin({
+        plugin_id: pluginId || '',
+        all: Boolean(all)
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  checkUpdates(forceRefresh = false, guiVersion = '') {
+    return new Promise((resolve, reject) => {
+      this.client.CheckUpdates({
+        force_refresh: Boolean(forceRefresh),
+        gui_version: guiVersion ? String(guiVersion) : ''
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response);
+      });
+    });
+  }
+
+  markPluginsSeen(pluginIds = []) {
+    return new Promise((resolve, reject) => {
+      this.client.MarkPluginsSeen({
+        plugin_ids: Array.isArray(pluginIds) ? pluginIds : []
+      }, (err, response) => {
         if (err) return reject(err);
         resolve(response);
       });
@@ -293,48 +340,38 @@ class ConduitRpcClient {
     });
   }
 
-  mergeContacts(primaryContactId, secondaryContactId) {
+  syncContacts(provider = '', accountId = '') {
     return new Promise((resolve, reject) => {
-      this.client.MergeContacts({
-        primary_contact_id: primaryContactId,
-        secondary_contact_id: secondaryContactId
+      this.client.SyncContacts({
+        provider: provider || '',
+        account_id: accountId || ''
       }, (err, response) => {
         if (err) return reject(err);
-        resolve(response.merged_contact);
+        resolve(response || { synced_count: 0, unified_count: 0 });
       });
     });
   }
 
-  splitChannel(channelId, newContactName) {
+  startChat(contactId, channelId = '') {
     return new Promise((resolve, reject) => {
-      this.client.SplitChannel({
-        channel_id: channelId,
-        new_contact_name: newContactName
-      }, (err, response) => {
-        if (err) return reject(err);
-        resolve(response.new_contact);
-      });
-    });
-  }
-
-  setContactIdentity(contactId, email, phone) {
-    return new Promise((resolve, reject) => {
-      this.client.SetContactIdentity({
+      this.client.StartChat({
         contact_id: contactId,
-        email: email || '',
-        phone: phone || ''
+        channel_id: channelId || ''
+      }, (err, response) => {
+        if (err) return reject(err);
+        resolve(response ? response.conversation : null);
+      });
+    });
+  }
+
+  renameContact(contactId, displayName) {
+    return new Promise((resolve, reject) => {
+      this.client.RenameContact({
+        contact_id: contactId,
+        display_name: displayName
       }, (err, response) => {
         if (err) return reject(err);
         resolve(response.contact);
-      });
-    });
-  }
-
-  findContactsByIdentity(query) {
-    return new Promise((resolve, reject) => {
-      this.client.FindContactsByIdentity({ query }, (err, response) => {
-        if (err) return reject(err);
-        resolve(response.contacts || []);
       });
     });
   }

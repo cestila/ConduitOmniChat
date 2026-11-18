@@ -28,6 +28,9 @@ const (
 	ConduitService_ListContacts_FullMethodName           = "/conduit.v1.ConduitService/ListContacts"
 	ConduitService_MergeContacts_FullMethodName          = "/conduit.v1.ConduitService/MergeContacts"
 	ConduitService_SplitChannel_FullMethodName           = "/conduit.v1.ConduitService/SplitChannel"
+	ConduitService_SyncContacts_FullMethodName           = "/conduit.v1.ConduitService/SyncContacts"
+	ConduitService_StartChat_FullMethodName              = "/conduit.v1.ConduitService/StartChat"
+	ConduitService_RenameContact_FullMethodName          = "/conduit.v1.ConduitService/RenameContact"
 	ConduitService_SetContactIdentity_FullMethodName     = "/conduit.v1.ConduitService/SetContactIdentity"
 	ConduitService_FindContactsByIdentity_FullMethodName = "/conduit.v1.ConduitService/FindContactsByIdentity"
 	ConduitService_ListAccounts_FullMethodName           = "/conduit.v1.ConduitService/ListAccounts"
@@ -38,6 +41,10 @@ const (
 	ConduitService_ListPlugins_FullMethodName            = "/conduit.v1.ConduitService/ListPlugins"
 	ConduitService_InstallPlugin_FullMethodName          = "/conduit.v1.ConduitService/InstallPlugin"
 	ConduitService_TogglePlugin_FullMethodName           = "/conduit.v1.ConduitService/TogglePlugin"
+	ConduitService_UninstallPlugin_FullMethodName        = "/conduit.v1.ConduitService/UninstallPlugin"
+	ConduitService_UpdatePlugin_FullMethodName           = "/conduit.v1.ConduitService/UpdatePlugin"
+	ConduitService_CheckUpdates_FullMethodName           = "/conduit.v1.ConduitService/CheckUpdates"
+	ConduitService_MarkPluginsSeen_FullMethodName        = "/conduit.v1.ConduitService/MarkPluginsSeen"
 	ConduitService_GetSettings_FullMethodName            = "/conduit.v1.ConduitService/GetSettings"
 	ConduitService_UpdateSettings_FullMethodName         = "/conduit.v1.ConduitService/UpdateSettings"
 	ConduitService_GetStatus_FullMethodName              = "/conduit.v1.ConduitService/GetStatus"
@@ -73,6 +80,9 @@ type ConduitServiceClient interface {
 	ListContacts(ctx context.Context, in *ListContactsRequest, opts ...grpc.CallOption) (*ListContactsResponse, error)
 	MergeContacts(ctx context.Context, in *MergeContactsRequest, opts ...grpc.CallOption) (*MergeContactsResponse, error)
 	SplitChannel(ctx context.Context, in *SplitChannelRequest, opts ...grpc.CallOption) (*SplitChannelResponse, error)
+	SyncContacts(ctx context.Context, in *SyncContactsRequest, opts ...grpc.CallOption) (*SyncContactsResponse, error)
+	StartChat(ctx context.Context, in *StartChatRequest, opts ...grpc.CallOption) (*StartChatResponse, error)
+	RenameContact(ctx context.Context, in *RenameContactRequest, opts ...grpc.CallOption) (*RenameContactResponse, error)
 	// Identidad canónica por email y teléfono (enlace entre proveedores)
 	SetContactIdentity(ctx context.Context, in *SetContactIdentityRequest, opts ...grpc.CallOption) (*SetContactIdentityResponse, error)
 	FindContactsByIdentity(ctx context.Context, in *FindContactsByIdentityRequest, opts ...grpc.CallOption) (*FindContactsByIdentityResponse, error)
@@ -86,6 +96,10 @@ type ConduitServiceClient interface {
 	ListPlugins(ctx context.Context, in *ListPluginsRequest, opts ...grpc.CallOption) (*ListPluginsResponse, error)
 	InstallPlugin(ctx context.Context, in *InstallPluginRequest, opts ...grpc.CallOption) (*InstallPluginResponse, error)
 	TogglePlugin(ctx context.Context, in *TogglePluginRequest, opts ...grpc.CallOption) (*TogglePluginResponse, error)
+	UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error)
+	UpdatePlugin(ctx context.Context, in *UpdatePluginRequest, opts ...grpc.CallOption) (*UpdatePluginResponse, error)
+	CheckUpdates(ctx context.Context, in *CheckUpdatesRequest, opts ...grpc.CallOption) (*CheckUpdatesResponse, error)
+	MarkPluginsSeen(ctx context.Context, in *MarkPluginsSeenRequest, opts ...grpc.CallOption) (*MarkPluginsSeenResponse, error)
 	// Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
 	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
@@ -214,6 +228,36 @@ func (c *conduitServiceClient) SplitChannel(ctx context.Context, in *SplitChanne
 	return out, nil
 }
 
+func (c *conduitServiceClient) SyncContacts(ctx context.Context, in *SyncContactsRequest, opts ...grpc.CallOption) (*SyncContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncContactsResponse)
+	err := c.cc.Invoke(ctx, ConduitService_SyncContacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) StartChat(ctx context.Context, in *StartChatRequest, opts ...grpc.CallOption) (*StartChatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartChatResponse)
+	err := c.cc.Invoke(ctx, ConduitService_StartChat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) RenameContact(ctx context.Context, in *RenameContactRequest, opts ...grpc.CallOption) (*RenameContactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenameContactResponse)
+	err := c.cc.Invoke(ctx, ConduitService_RenameContact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *conduitServiceClient) SetContactIdentity(ctx context.Context, in *SetContactIdentityRequest, opts ...grpc.CallOption) (*SetContactIdentityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetContactIdentityResponse)
@@ -308,6 +352,46 @@ func (c *conduitServiceClient) TogglePlugin(ctx context.Context, in *TogglePlugi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TogglePluginResponse)
 	err := c.cc.Invoke(ctx, ConduitService_TogglePlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UninstallPluginResponse)
+	err := c.cc.Invoke(ctx, ConduitService_UninstallPlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) UpdatePlugin(ctx context.Context, in *UpdatePluginRequest, opts ...grpc.CallOption) (*UpdatePluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePluginResponse)
+	err := c.cc.Invoke(ctx, ConduitService_UpdatePlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) CheckUpdates(ctx context.Context, in *CheckUpdatesRequest, opts ...grpc.CallOption) (*CheckUpdatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckUpdatesResponse)
+	err := c.cc.Invoke(ctx, ConduitService_CheckUpdates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *conduitServiceClient) MarkPluginsSeen(ctx context.Context, in *MarkPluginsSeenRequest, opts ...grpc.CallOption) (*MarkPluginsSeenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MarkPluginsSeenResponse)
+	err := c.cc.Invoke(ctx, ConduitService_MarkPluginsSeen_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +530,9 @@ type ConduitServiceServer interface {
 	ListContacts(context.Context, *ListContactsRequest) (*ListContactsResponse, error)
 	MergeContacts(context.Context, *MergeContactsRequest) (*MergeContactsResponse, error)
 	SplitChannel(context.Context, *SplitChannelRequest) (*SplitChannelResponse, error)
+	SyncContacts(context.Context, *SyncContactsRequest) (*SyncContactsResponse, error)
+	StartChat(context.Context, *StartChatRequest) (*StartChatResponse, error)
+	RenameContact(context.Context, *RenameContactRequest) (*RenameContactResponse, error)
 	// Identidad canónica por email y teléfono (enlace entre proveedores)
 	SetContactIdentity(context.Context, *SetContactIdentityRequest) (*SetContactIdentityResponse, error)
 	FindContactsByIdentity(context.Context, *FindContactsByIdentityRequest) (*FindContactsByIdentityResponse, error)
@@ -459,6 +546,10 @@ type ConduitServiceServer interface {
 	ListPlugins(context.Context, *ListPluginsRequest) (*ListPluginsResponse, error)
 	InstallPlugin(context.Context, *InstallPluginRequest) (*InstallPluginResponse, error)
 	TogglePlugin(context.Context, *TogglePluginRequest) (*TogglePluginResponse, error)
+	UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error)
+	UpdatePlugin(context.Context, *UpdatePluginRequest) (*UpdatePluginResponse, error)
+	CheckUpdates(context.Context, *CheckUpdatesRequest) (*CheckUpdatesResponse, error)
+	MarkPluginsSeen(context.Context, *MarkPluginsSeenRequest) (*MarkPluginsSeenResponse, error)
 	// Configuración de la Aplicación (Idioma, Zona Horaria, Temas)
 	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
@@ -515,6 +606,15 @@ func (UnimplementedConduitServiceServer) MergeContacts(context.Context, *MergeCo
 func (UnimplementedConduitServiceServer) SplitChannel(context.Context, *SplitChannelRequest) (*SplitChannelResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SplitChannel not implemented")
 }
+func (UnimplementedConduitServiceServer) SyncContacts(context.Context, *SyncContactsRequest) (*SyncContactsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncContacts not implemented")
+}
+func (UnimplementedConduitServiceServer) StartChat(context.Context, *StartChatRequest) (*StartChatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartChat not implemented")
+}
+func (UnimplementedConduitServiceServer) RenameContact(context.Context, *RenameContactRequest) (*RenameContactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenameContact not implemented")
+}
 func (UnimplementedConduitServiceServer) SetContactIdentity(context.Context, *SetContactIdentityRequest) (*SetContactIdentityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetContactIdentity not implemented")
 }
@@ -544,6 +644,18 @@ func (UnimplementedConduitServiceServer) InstallPlugin(context.Context, *Install
 }
 func (UnimplementedConduitServiceServer) TogglePlugin(context.Context, *TogglePluginRequest) (*TogglePluginResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TogglePlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UninstallPlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) UpdatePlugin(context.Context, *UpdatePluginRequest) (*UpdatePluginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePlugin not implemented")
+}
+func (UnimplementedConduitServiceServer) CheckUpdates(context.Context, *CheckUpdatesRequest) (*CheckUpdatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckUpdates not implemented")
+}
+func (UnimplementedConduitServiceServer) MarkPluginsSeen(context.Context, *MarkPluginsSeenRequest) (*MarkPluginsSeenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkPluginsSeen not implemented")
 }
 func (UnimplementedConduitServiceServer) GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSettings not implemented")
@@ -754,6 +866,60 @@ func _ConduitService_SplitChannel_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConduitService_SyncContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).SyncContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_SyncContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).SyncContacts(ctx, req.(*SyncContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_StartChat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartChatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).StartChat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_StartChat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).StartChat(ctx, req.(*StartChatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_RenameContact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameContactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).RenameContact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_RenameContact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).RenameContact(ctx, req.(*RenameContactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ConduitService_SetContactIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetContactIdentityRequest)
 	if err := dec(in); err != nil {
@@ -930,6 +1096,78 @@ func _ConduitService_TogglePlugin_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ConduitServiceServer).TogglePlugin(ctx, req.(*TogglePluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_UninstallPlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UninstallPluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).UninstallPlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_UninstallPlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).UninstallPlugin(ctx, req.(*UninstallPluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_UpdatePlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).UpdatePlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_UpdatePlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).UpdatePlugin(ctx, req.(*UpdatePluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_CheckUpdates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckUpdatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).CheckUpdates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_CheckUpdates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).CheckUpdates(ctx, req.(*CheckUpdatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConduitService_MarkPluginsSeen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkPluginsSeenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConduitServiceServer).MarkPluginsSeen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConduitService_MarkPluginsSeen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConduitServiceServer).MarkPluginsSeen(ctx, req.(*MarkPluginsSeenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1172,6 +1410,18 @@ var ConduitService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ConduitService_SplitChannel_Handler,
 		},
 		{
+			MethodName: "SyncContacts",
+			Handler:    _ConduitService_SyncContacts_Handler,
+		},
+		{
+			MethodName: "StartChat",
+			Handler:    _ConduitService_StartChat_Handler,
+		},
+		{
+			MethodName: "RenameContact",
+			Handler:    _ConduitService_RenameContact_Handler,
+		},
+		{
 			MethodName: "SetContactIdentity",
 			Handler:    _ConduitService_SetContactIdentity_Handler,
 		},
@@ -1210,6 +1460,22 @@ var ConduitService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TogglePlugin",
 			Handler:    _ConduitService_TogglePlugin_Handler,
+		},
+		{
+			MethodName: "UninstallPlugin",
+			Handler:    _ConduitService_UninstallPlugin_Handler,
+		},
+		{
+			MethodName: "UpdatePlugin",
+			Handler:    _ConduitService_UpdatePlugin_Handler,
+		},
+		{
+			MethodName: "CheckUpdates",
+			Handler:    _ConduitService_CheckUpdates_Handler,
+		},
+		{
+			MethodName: "MarkPluginsSeen",
+			Handler:    _ConduitService_MarkPluginsSeen_Handler,
 		},
 		{
 			MethodName: "GetSettings",
@@ -1272,6 +1538,7 @@ const (
 	PluginService_SendOutgoingMessage_FullMethodName  = "/conduit.v1.PluginService/SendOutgoingMessage"
 	PluginService_StreamIncomingEvents_FullMethodName = "/conduit.v1.PluginService/StreamIncomingEvents"
 	PluginService_SyncChatHistory_FullMethodName      = "/conduit.v1.PluginService/SyncChatHistory"
+	PluginService_SyncContacts_FullMethodName         = "/conduit.v1.PluginService/SyncContacts"
 	PluginService_SendReaction_FullMethodName         = "/conduit.v1.PluginService/SendReaction"
 	PluginService_SendVote_FullMethodName             = "/conduit.v1.PluginService/SendVote"
 	PluginService_ClickButton_FullMethodName          = "/conduit.v1.PluginService/ClickButton"
@@ -1294,6 +1561,7 @@ type PluginServiceClient interface {
 	SendOutgoingMessage(ctx context.Context, in *OutgoingMessageRequest, opts ...grpc.CallOption) (*OutgoingMessageResponse, error)
 	StreamIncomingEvents(ctx context.Context, in *PluginStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PluginEvent], error)
 	SyncChatHistory(ctx context.Context, in *SyncChatHistoryRequest, opts ...grpc.CallOption) (*SyncChatHistoryResponse, error)
+	SyncContacts(ctx context.Context, in *SyncContactsRequest, opts ...grpc.CallOption) (*PluginSyncContactsResponse, error)
 	SendReaction(ctx context.Context, in *PluginReactionRequest, opts ...grpc.CallOption) (*PluginReactionResponse, error)
 	SendVote(ctx context.Context, in *PluginVoteRequest, opts ...grpc.CallOption) (*PluginVoteResponse, error)
 	ClickButton(ctx context.Context, in *PluginClickButtonRequest, opts ...grpc.CallOption) (*PluginClickButtonResponse, error)
@@ -1368,6 +1636,16 @@ func (c *pluginServiceClient) SyncChatHistory(ctx context.Context, in *SyncChatH
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SyncChatHistoryResponse)
 	err := c.cc.Invoke(ctx, PluginService_SyncChatHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginServiceClient) SyncContacts(ctx context.Context, in *SyncContactsRequest, opts ...grpc.CallOption) (*PluginSyncContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PluginSyncContactsResponse)
+	err := c.cc.Invoke(ctx, PluginService_SyncContacts_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1475,6 +1753,7 @@ type PluginServiceServer interface {
 	SendOutgoingMessage(context.Context, *OutgoingMessageRequest) (*OutgoingMessageResponse, error)
 	StreamIncomingEvents(*PluginStreamRequest, grpc.ServerStreamingServer[PluginEvent]) error
 	SyncChatHistory(context.Context, *SyncChatHistoryRequest) (*SyncChatHistoryResponse, error)
+	SyncContacts(context.Context, *SyncContactsRequest) (*PluginSyncContactsResponse, error)
 	SendReaction(context.Context, *PluginReactionRequest) (*PluginReactionResponse, error)
 	SendVote(context.Context, *PluginVoteRequest) (*PluginVoteResponse, error)
 	ClickButton(context.Context, *PluginClickButtonRequest) (*PluginClickButtonResponse, error)
@@ -1510,6 +1789,9 @@ func (UnimplementedPluginServiceServer) StreamIncomingEvents(*PluginStreamReques
 }
 func (UnimplementedPluginServiceServer) SyncChatHistory(context.Context, *SyncChatHistoryRequest) (*SyncChatHistoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncChatHistory not implemented")
+}
+func (UnimplementedPluginServiceServer) SyncContacts(context.Context, *SyncContactsRequest) (*PluginSyncContactsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncContacts not implemented")
 }
 func (UnimplementedPluginServiceServer) SendReaction(context.Context, *PluginReactionRequest) (*PluginReactionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendReaction not implemented")
@@ -1638,6 +1920,24 @@ func _PluginService_SyncChatHistory_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PluginServiceServer).SyncChatHistory(ctx, req.(*SyncChatHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginService_SyncContacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).SyncContacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_SyncContacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).SyncContacts(ctx, req.(*SyncContactsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1826,6 +2126,10 @@ var PluginService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncChatHistory",
 			Handler:    _PluginService_SyncChatHistory_Handler,
+		},
+		{
+			MethodName: "SyncContacts",
+			Handler:    _PluginService_SyncContacts_Handler,
 		},
 		{
 			MethodName: "SendReaction",

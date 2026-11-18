@@ -9,11 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/plugininstall"
+	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
 )
 
 type fakeInstaller struct {
 	spec, version string
+	resVersion    string
 	err           error
 	removed       string
 }
@@ -23,7 +26,15 @@ func (f *fakeInstaller) Install(_ context.Context, spec, version string) (plugin
 	if f.err != nil {
 		return plugininstall.Result{}, f.err
 	}
-	return plugininstall.Result{ID: "telegram", Version: "v1.0.0", Path: "/p/conduit-plugin-telegram"}, nil
+	id := spec
+	if id == "" {
+		id = "telegram"
+	}
+	ver := "v1.0.0"
+	if f.resVersion != "" {
+		ver = f.resVersion
+	}
+	return plugininstall.Result{ID: id, Version: ver, Path: "/p/conduit-plugin-" + id}, nil
 }
 
 func (f *fakeInstaller) Remove(id string) (string, error) {
@@ -32,6 +43,10 @@ func (f *fakeInstaller) Remove(id string) (string, error) {
 		return "", f.err
 	}
 	return "/p/conduit-plugin-" + id, nil
+}
+
+func (f *fakeInstaller) IsManagedPath(string) bool {
+	return true
 }
 
 func run(t *testing.T, deps cliDeps, args ...string) (handled bool, code int, out, errOut string) {
@@ -60,6 +75,9 @@ func TestCLIHelp(t *testing.T) {
 			"  plugin install   download a plugin from its GitHub release, verify its SHA-256 and install it\n" +
 			"  plugin list      list the installed plugin binaries\n" +
 			"  plugin remove    delete an installed plugin binary\n" +
+			"  plugin check     check for plugin, Core, and TUI updates\n" +
+			"  plugin update    update one plugin or all managed plugins\n" +
+			"  version          print version and build information\n" +
 			"\nPlugin directories (highest precedence first):\n  /a/plugins\n  /b\n" +
 			"\nEnvironment:\n" +
 			"  CONDUIT_PLUGIN_DIR   extra plugin directories searched first\n" +
@@ -87,7 +105,7 @@ func TestCLIUsageErrors(t *testing.T) {
 		{[]string{"plugin", "list", "extra"}, `unexpected argument "extra"`},
 	}
 	for _, c := range cases {
-		fi := &fakeInstaller{}
+		fi := &fakeInstaller{resVersion: "1.2.0"}
 		handled, code, out, errOut := run(t, cliDeps{Installer: fi}, c.args...)
 		want := "conduitd: " + c.msg + "\n\n" + cliUsage
 		if !handled || code != 2 || out != "" || errOut != want {
@@ -154,4 +172,185 @@ func TestCLIRemove(t *testing.T) {
 	if strings.Contains(errOut, "usage") {
 		t.Fatal("sin uso")
 	}
+}
+
+func TestRunCLIVersion(t *testing.T) {
+	origVersion, origCommit, origDate := buildinfo.Version, buildinfo.Commit, buildinfo.Date
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.Commit, buildinfo.Date = origVersion, origCommit, origDate
+	})
+
+	t.Run("default version flags", func(t *testing.T) {
+		for _, arg := range []string{"version", "--version", "-v"} {
+			handled, code, out, errOut := run(t, cliDeps{}, arg)
+			if !handled || code != 0 || errOut != "" {
+				t.Fatalf("%s: handled=%v code=%d errOut=%q", arg, handled, code, errOut)
+			}
+			if !strings.Contains(out, buildinfo.Version) {
+				t.Fatalf("%s: output %q does not contain %q", arg, out, buildinfo.Version)
+			}
+		}
+	})
+
+	t.Run("injected build metadata", func(t *testing.T) {
+		buildinfo.Version = "v0.1.2"
+		buildinfo.Commit = "abc1234"
+		buildinfo.Date = "2026-11-18"
+		handled, code, out, errOut := run(t, cliDeps{}, "version")
+		want := "conduitd v0.1.2 (commit abc1234, built 2026-11-18)\n"
+		if !handled || code != 0 || errOut != "" || out != want {
+			t.Fatalf("got handled=%v code=%d out=%q errOut=%q, want out=%q", handled, code, out, errOut, want)
+		}
+	})
+
+	t.Run("unexpected extra argument", func(t *testing.T) {
+		handled, code, out, errOut := run(t, cliDeps{}, "version", "extra")
+		wantErr := "conduitd: unexpected argument \"extra\"\n\n" + cliUsage
+		if !handled || code != 2 || out != "" || errOut != wantErr {
+			t.Fatalf("got handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+	})
+}
+
+func TestCLIPluginCheckAndUpdate(t *testing.T) {
+	t.Run("plugin check", func(t *testing.T) {
+		dir := t.TempDir()
+		binPath := filepath.Join(dir, "conduit-plugin-telegram")
+		if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		handled, code, out, errOut := run(t, cliDeps{
+			Installer:  &fakeInstaller{},
+			PluginDirs: []string{dir},
+			TUIVersion: "0.4.0",
+		}, "plugin", "check")
+		if !handled || code != 0 || errOut != "" {
+			t.Fatalf("plugin check failed: handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+		if !strings.Contains(out, "core\t") {
+			t.Fatalf("expected core in check output, got %q", out)
+		}
+		if !strings.Contains(out, "tui\t0.4.0") {
+			t.Fatalf("expected tui 0.4.0 in check output, got %q", out)
+		}
+		if !strings.Contains(out, "telegram") {
+			t.Fatalf("expected telegram in check output, got %q", out)
+		}
+	})
+
+	t.Run("plugin update --all", func(t *testing.T) {
+		dir := t.TempDir()
+		binPath := filepath.Join(dir, "conduit-plugin-telegram")
+		if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fi := &fakeInstaller{resVersion: "1.2.0"}
+		handled, code, out, errOut := run(t, cliDeps{
+			Installer:  fi,
+			PluginDirs: []string{dir},
+		}, "plugin", "update", "--all")
+		if !handled || code != 0 || errOut != "" {
+			t.Fatalf("plugin update --all failed: handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+		if fi.spec != "telegram" {
+			t.Fatalf("expected installer to be called for telegram, got %q", fi.spec)
+		}
+		if !strings.Contains(out, "telegram") {
+			t.Fatalf("expected telegram in update output, got %q", out)
+		}
+	})
+
+	t.Run("plugin update single id", func(t *testing.T) {
+		fi := &fakeInstaller{resVersion: "1.2.0"}
+		handled, code, out, errOut := run(t, cliDeps{Installer: fi}, "plugin", "update", "telegram")
+		if !handled || code != 0 || errOut != "" {
+			t.Fatalf("plugin update telegram failed: handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+		if fi.spec != "telegram" || !strings.Contains(out, "updated telegram") {
+			t.Fatalf("unexpected output: spec=%q out=%q", fi.spec, out)
+		}
+	})
+
+	t.Run("plugin update usage errors", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"plugin", "update"},
+			{"plugin", "update", "telegram", "--all"},
+			{"plugin", "check", "extra"},
+		} {
+			handled, code, _, _ := run(t, cliDeps{Installer: &fakeInstaller{}}, args...)
+			if !handled || code != 2 {
+				t.Fatalf("%v: expected usage error code 2, got handled=%v code=%d", args, handled, code)
+			}
+		}
+	})
+
+	t.Run("plugin update updates manifest and skips up-to-date and incompatible", func(t *testing.T) {
+		dir := t.TempDir()
+		for _, id := range []string{"telegram", "whatsapp", "signal"} {
+			if err := os.WriteFile(filepath.Join(dir, "conduit-plugin-"+id), []byte("x"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		manifestPath := filepath.Join(t.TempDir(), "plugins-manifest.json")
+		store := pluginmgr.NewManifestStore(manifestPath)
+		if err := store.Save(&pluginmgr.LocalManifest{
+			SchemaVersion: 1,
+			Plugins: map[string]pluginmgr.LocalPluginRecord{
+				"telegram": {
+					ID:               "telegram",
+					InstalledVersion: "1.0.0",
+					LatestVersion:    "1.0.0",
+				},
+				"whatsapp": {
+					ID:               "whatsapp",
+					InstalledVersion: "1.0.0",
+					LatestVersion:    "1.2.0",
+				},
+				"signal": {
+					ID:                 "signal",
+					InstalledVersion:   "1.0.0",
+					LatestVersion:      "2.0.0",
+					MinProtocolVersion: 999,
+				},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		fi := &fakeInstaller{resVersion: "1.2.0"}
+		handled, code, out, errOut := run(t, cliDeps{
+			Installer:  fi,
+			PluginDirs: []string{dir},
+			Manifest:   store,
+		}, "plugin", "update", "--all")
+		if !handled || code != 0 || errOut != "" {
+			t.Fatalf("plugin update --all failed: handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+		if !strings.Contains(out, "up-to-date telegram (1.0.0)") {
+			t.Fatalf("expected telegram to be skipped as up-to-date, got %q", out)
+		}
+		if !strings.Contains(out, "skipped signal (incompatible:") {
+			t.Fatalf("expected signal to be skipped as incompatible, got %q", out)
+		}
+		if !strings.Contains(out, "updated whatsapp") {
+			t.Fatalf("expected whatsapp to be updated, got %q", out)
+		}
+		loaded, err := store.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := loaded.Plugins["whatsapp"].InstalledVersion; got != "1.2.0" {
+			t.Fatalf("expected manifest InstalledVersion to be updated to 1.2.0, got %q", got)
+		}
+
+		// Single incompatible plugin update returns exit code 1.
+		handled, code, _, errOut = run(t, cliDeps{
+			Installer:  &fakeInstaller{},
+			PluginDirs: []string{dir},
+			Manifest:   store,
+		}, "plugin", "update", "signal")
+		if !handled || code != 1 || !strings.Contains(errOut, "incompatible") {
+			t.Fatalf("expected incompatible error for single plugin update, got handled=%v code=%d errOut=%q", handled, code, errOut)
+		}
+	})
 }
