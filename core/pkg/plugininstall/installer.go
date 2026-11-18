@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
@@ -150,42 +151,138 @@ func (in *Installer) binaryName(id string) string {
 	return name
 }
 
-// Install downloads and installs the plugin spec at version ("" = latest).
-func (in *Installer) Install(ctx context.Context, spec, version string) (Result, error) {
-	id, repo, err := in.Resolve(spec)
-	if err != nil {
+// IsManagedPath reports whether binaryPath resides directly inside PluginDir.
+func (in *Installer) IsManagedPath(binaryPath string) bool {
+	if binaryPath == "" || in.PluginDir == "" {
+		return false
+	}
+	return filepath.Clean(filepath.Dir(binaryPath)) == filepath.Clean(in.PluginDir)
+}
+
+// PreparedInstall holds a downloaded, checksum-verified plugin binary staged
+// outside PluginDir until Commit moves it into place.
+type PreparedInstall struct {
+	ID        string
+	Version   string
+	Path      string
+	pluginDir string
+	tempDir   string
+	tempFile  string
+}
+
+// Cleanup removes any temporary staging directory left by PrepareUpdate.
+func (p *PreparedInstall) Cleanup() {
+	if p == nil || p.tempDir == "" {
+		return
+	}
+	_ = os.RemoveAll(p.tempDir)
+	p.tempDir = ""
+	p.tempFile = ""
+}
+
+// Commit atomically installs the verified binary into PluginDir and cleans up staging files.
+func (p *PreparedInstall) Commit() (Result, error) {
+	if p == nil || p.tempFile == "" {
+		return Result{}, errors.New("prepared install is not available")
+	}
+	defer p.Cleanup()
+
+	if err := os.MkdirAll(p.pluginDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("creating plugin directory: %w", err)
+	}
+	if err := os.Chmod(p.tempFile, 0o755); err != nil {
 		return Result{}, err
+	}
+	if err := moveFile(p.tempFile, p.Path); err != nil {
+		return Result{}, fmt.Errorf("installing %s: %w", p.Path, err)
+	}
+	return Result{ID: p.ID, Version: p.Version, Path: p.Path}, nil
+}
+
+func moveFile(src, dst string) error {
+	err := os.Rename(src, dst)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	return copyAndRename(src, dst)
+}
+
+func copyAndRename(srcPath, dstPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	staged, err := os.CreateTemp(filepath.Dir(dstPath), ".install-*")
+	if err != nil {
+		return err
+	}
+	stagedName := staged.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(stagedName)
+		}
+	}()
+
+	if _, err := io.Copy(staged, src); err != nil {
+		_ = staged.Close()
+		return err
+	}
+	if err := staged.Chmod(0o755); err != nil {
+		_ = staged.Close()
+		return err
+	}
+	if err := staged.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(stagedName, dstPath); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func (in *Installer) resolveRelease(ctx context.Context, spec, version string) (id, repo string, rel release, tag string, err error) {
+	id, repo, err = in.Resolve(spec)
+	if err != nil {
+		return "", "", release{}, "", err
 	}
 	endpoint := "/repos/" + repo + "/releases/latest"
 	if version != "" {
 		if !versionPattern.MatchString(version) {
-			return Result{}, fmt.Errorf("invalid version %q", version)
+			return "", "", release{}, "", fmt.Errorf("invalid version %q", version)
 		}
 		endpoint = "/repos/" + repo + "/releases/tags/" + version
 	}
 
-	var rel release
 	var body strings.Builder
 	if err := in.fetch(ctx, strings.TrimRight(in.APIBase, "/")+endpoint, maxAPIBytes, &body); err != nil {
-		return Result{}, fmt.Errorf("fetching release of %s: %w", repo, err)
+		return "", "", release{}, "", fmt.Errorf("fetching release of %s: %w", repo, err)
 	}
 	if err := json.Unmarshal([]byte(body.String()), &rel); err != nil {
-		return Result{}, fmt.Errorf("decoding release of %s: %w", repo, err)
+		return "", "", release{}, "", fmt.Errorf("decoding release of %s: %w", repo, err)
 	}
-	tag := rel.TagName
+	tag = rel.TagName
 	if tag == "" {
 		tag = version
 	}
 	if !versionPattern.MatchString(tag) {
-		return Result{}, fmt.Errorf("release of %s has an invalid tag %q", repo, tag)
+		return "", "", release{}, "", fmt.Errorf("release of %s has an invalid tag %q", repo, tag)
 	}
+	return id, repo, rel, tag, nil
+}
 
+func (in *Installer) selectReleaseAssets(rel release, id, repo, tag string) (assetName, assetURL, sumsURL string, err error) {
 	ext := ".tar.gz"
 	if in.GOOS == "windows" {
 		ext = ".zip"
 	}
-	assetName := fmt.Sprintf("%s%s_%s_%s_%s%s", pluginmgr.BinaryPrefix, id, strings.TrimPrefix(tag, "v"), in.GOOS, in.GOARCH, ext)
-	var assetURL, sumsURL string
+	assetName = fmt.Sprintf("%s%s_%s_%s_%s%s", pluginmgr.BinaryPrefix, id, strings.TrimPrefix(tag, "v"), in.GOOS, in.GOARCH, ext)
 	for _, a := range rel.Assets {
 		switch a.Name {
 		case assetName:
@@ -195,43 +292,64 @@ func (in *Installer) Install(ctx context.Context, spec, version string) (Result,
 		}
 	}
 	if assetURL == "" {
-		return Result{}, fmt.Errorf("release %s of %s has no asset for %s/%s (expected %s)", tag, repo, in.GOOS, in.GOARCH, assetName)
+		return "", "", "", fmt.Errorf("release %s of %s has no asset for %s/%s (expected %s)", tag, repo, in.GOOS, in.GOARCH, assetName)
 	}
 	if sumsURL == "" {
-		return Result{}, fmt.Errorf("release %s of %s has no %s", tag, repo, checksumsName)
+		return "", "", "", fmt.Errorf("release %s of %s has no %s", tag, repo, checksumsName)
+	}
+	return assetName, assetURL, sumsURL, nil
+}
+
+// PrepareUpdate downloads, SHA-256 verifies, and extracts the plugin binary
+// into a temporary staging directory without modifying PluginDir.
+func (in *Installer) PrepareUpdate(ctx context.Context, spec, version string) (*PreparedInstall, error) {
+	id, repo, rel, tag, err := in.resolveRelease(ctx, spec, version)
+	if err != nil {
+		return nil, err
+	}
+	assetName, assetURL, sumsURL, err := in.selectReleaseAssets(rel, id, repo, tag)
+	if err != nil {
+		return nil, err
 	}
 
 	var sums strings.Builder
 	if err := in.fetch(ctx, sumsURL, maxChecksumsBytes, &sums); err != nil {
-		return Result{}, fmt.Errorf("downloading %s: %w", checksumsName, err)
+		return nil, fmt.Errorf("downloading %s: %w", checksumsName, err)
 	}
 	want, err := checksumFor(sums.String(), assetName)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 
-	if err := os.MkdirAll(in.PluginDir, 0o755); err != nil {
-		return Result{}, fmt.Errorf("creating plugin directory: %w", err)
-	}
-	archive, err := os.CreateTemp(in.PluginDir, ".download-*")
+	tempDir, err := os.MkdirTemp("", "conduit-plugin-*")
 	if err != nil {
-		return Result{}, fmt.Errorf("creating temp file: %w", err)
+		return nil, fmt.Errorf("creating temp directory: %w", err)
 	}
-	defer func() { archive.Close(); os.Remove(archive.Name()) }()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(tempDir)
+		}
+	}()
+
+	archive, err := os.CreateTemp(tempDir, "download-*")
+	if err != nil {
+		return nil, fmt.Errorf("creating temp file: %w", err)
+	}
+	defer archive.Close()
 
 	hasher := sha256.New()
 	if err := in.fetch(ctx, assetURL, maxArchiveBytes, io.MultiWriter(archive, hasher)); err != nil {
-		return Result{}, fmt.Errorf("downloading %s: %w", assetName, err)
+		return nil, fmt.Errorf("downloading %s: %w", assetName, err)
 	}
 	if got := hex.EncodeToString(hasher.Sum(nil)); got != want {
-		return Result{}, fmt.Errorf("checksum mismatch for %s: expected %s, got %s", assetName, want, got)
+		return nil, fmt.Errorf("checksum mismatch for %s: expected %s, got %s", assetName, want, got)
 	}
 
-	bin, err := os.CreateTemp(in.PluginDir, ".extract-*")
+	bin, err := os.CreateTemp(tempDir, "extract-*")
 	if err != nil {
-		return Result{}, fmt.Errorf("creating temp file: %w", err)
+		return nil, fmt.Errorf("creating temp file: %w", err)
 	}
-	defer func() { bin.Close(); os.Remove(bin.Name()) }()
 	binName := in.binaryName(id)
 	if in.GOOS == "windows" {
 		err = extractZip(archive, binName, bin)
@@ -239,19 +357,41 @@ func (in *Installer) Install(ctx context.Context, spec, version string) (Result,
 		err = extractTarGz(archive, binName, bin)
 	}
 	if err != nil {
-		return Result{}, fmt.Errorf("extracting %s: %w", assetName, err)
+		_ = bin.Close()
+		return nil, fmt.Errorf("extracting %s: %w", assetName, err)
 	}
 	if err := bin.Chmod(0o755); err != nil {
-		return Result{}, err
+		_ = bin.Close()
+		return nil, err
 	}
 	if err := bin.Close(); err != nil {
+		return nil, err
+	}
+	_ = archive.Close()
+	_ = os.Remove(archive.Name())
+
+	cleanup = false
+	return &PreparedInstall{
+		ID:        id,
+		Version:   tag,
+		Path:      filepath.Join(in.PluginDir, binName),
+		pluginDir: in.PluginDir,
+		tempDir:   tempDir,
+		tempFile:  bin.Name(),
+	}, nil
+}
+
+// Install downloads and installs the plugin spec at version ("" = latest).
+func (in *Installer) Install(ctx context.Context, spec, version string) (Result, error) {
+	if err := os.MkdirAll(in.PluginDir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("creating plugin directory: %w", err)
+	}
+	prep, err := in.PrepareUpdate(ctx, spec, version)
+	if err != nil {
 		return Result{}, err
 	}
-	dest := filepath.Join(in.PluginDir, binName)
-	if err := os.Rename(bin.Name(), dest); err != nil {
-		return Result{}, fmt.Errorf("installing %s: %w", dest, err)
-	}
-	return Result{ID: id, Version: tag, Path: dest}, nil
+	defer prep.Cleanup()
+	return prep.Commit()
 }
 
 // Remove deletes the installed plugin binary from PluginDir.

@@ -203,6 +203,22 @@ func (m *Manager) Stop(name string) {
 	}
 }
 
+// StopPlugin kills a running plugin if present and removes it from both active
+// and disabled registries. Calling it for an unknown id is a no-op.
+func (m *Manager) StopPlugin(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if inst, exists := m.plugins[id]; exists {
+		if inst.Client != nil {
+			inst.Client.Kill()
+		}
+		delete(m.plugins, id)
+	}
+	delete(m.disabled, id)
+	return nil
+}
+
 // StopAll finaliza todos los plugins activos.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
