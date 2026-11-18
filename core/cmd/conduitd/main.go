@@ -88,6 +88,9 @@ func main() {
 		return db.GetSetting(context.Background(), "plugin_"+id+"_enabled", "true") == "true"
 	}
 
+	daemonCtx, daemonCancel := context.WithCancel(context.Background())
+	defer daemonCancel()
+
 	// loadPlugin lanza un ejecutable de plugin, lo registra y arranca su loop de eventos.
 	// Lo usan el arranque del daemon y la carga en caliente del RPC InstallPlugin.
 	loadPlugin := func(ctx context.Context, binPath string) error {
@@ -100,7 +103,7 @@ func main() {
 
 		// Escuchar stream de eventos unificado
 		go func(inst *pluginmgr.Instance, plugCfg pluginConfig) {
-			stream, err := inst.RPC.StreamIncomingEvents(context.Background(), &conduitv1.PluginStreamRequest{})
+			stream, err := inst.RPC.StreamIncomingEvents(daemonCtx, &conduitv1.PluginStreamRequest{})
 			if err != nil {
 				log.Printf("⚠️ Error iniciando stream de eventos %s: %v", plugCfg.Name, err)
 				return
@@ -108,6 +111,14 @@ func main() {
 			for {
 				ev, err := stream.Recv()
 				if err != nil {
+					if daemonCtx.Err() != nil {
+						// Apagado normal del daemon: conservar el estado 'connected' para reanudar al reiniciar.
+						break
+					}
+					if cur, ok := pluginManager.GetInstance(plugCfg.Name); !ok || cur != inst {
+						// Plugin detenido intencionalmente (por ejemplo, durante una actualización en caliente).
+						break
+					}
 					log.Printf("⚠️ Stream de eventos del plugin %s cerrado: %v", plugCfg.Name, err)
 					_ = db.UpdateAccountsStatusByProvider(context.Background(), plugCfg.Name, "disconnected", err.Error())
 					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+err.Error())
@@ -753,6 +764,7 @@ func main() {
 
 	fmt.Println("⚡ Conduit Core listo. Presiona Ctrl+C para detener.")
 	<-stop
+	daemonCancel()
 
 	fmt.Println("\n🛑 Deteniendo ConduitOmniChat Daemon limpiamente...")
 	grpcServer.GracefulStop()
