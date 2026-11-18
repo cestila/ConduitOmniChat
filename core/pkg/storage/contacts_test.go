@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/domain"
 )
@@ -343,6 +344,41 @@ func TestNewDBConcurrentWritesDoNotHitSQLiteBusy(t *testing.T) {
 		}
 	}
 }
+
+func TestRenameContactSetsNameLockedAndUpdatesConversation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "rename.db")
+	db, err := NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+	if err := db.SaveContact(ctx, &domain.Contact{
+		ID:          "c-1",
+		DisplayName: ".",
+		Phone:       "+5492664000001",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveContact: %v", err)
+	}
+	if err := db.SaveChannel(ctx, &domain.ContactChannel{
+		ID:        "ch-1",
+		ContactID: "c-1",
+		Provider:  domain.ProviderWhatsApp,
+		RemoteID:  "+5492664000001",
+	}); err != nil {
+		t.Fatalf("SaveChannel: %v", err)
+	}
+	cID, chID := "c-1", "ch-1"
+	if err := db.EnsureConversation(ctx, &domain.Conversation{
+		ID:              "conv-1",
+		ContactID:       &cID,
+		IsGroup:         false,
+		Title:           ".",
+		ActiveChannelID: &chID,
 	}); err != nil {
 		t.Fatalf("EnsureConversation: %v", err)
 	}

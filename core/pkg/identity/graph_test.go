@@ -550,6 +550,10 @@ func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveOrLinkChannelLegibleNameAndNameLocked(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legible.db")
+	db, err := storage.NewDB(dbPath)
 	if err != nil {
 		t.Fatalf("NewDB: %v", err)
 	}
@@ -559,7 +563,7 @@ func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
 	graph := NewGraph(db)
 
 	// 1. Initial sync arrives with symbol-only PushName "."
-	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "+5492664777194", "+5492664777194", ".", "", Hints{})
+	c1, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", ".", "", Hints{})
 	if err != nil {
 		t.Fatalf("ResolveOrLinkChannel initial: %v", err)
 	}
@@ -568,7 +572,7 @@ func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
 	}
 
 	// 2. Subsequent sync with legible name overwrites "."
-	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "+5492664777194", "+5492664777194", "Maximiliano Collado", "", Hints{})
+	c2, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", "Maximiliano Collado", "", Hints{})
 	if err != nil {
 		t.Fatalf("ResolveOrLinkChannel legible: %v", err)
 	}
@@ -580,7 +584,7 @@ func TestResolveOrLinkChannelConcurrentSafety(t *testing.T) {
 	if _, err := db.RenameContact(ctx, c2.ID, "Maxi Trabajo"); err != nil {
 		t.Fatalf("RenameContact: %v", err)
 	}
-	c3, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "+5492664777194", "+5492664777194", "Otro Nombre Sync", "", Hints{})
+	c3, _, err := graph.ResolveOrLinkChannel(ctx, domain.ProviderWhatsApp, "", "+5492664777194", "+5492664777194", "Otro Nombre Sync", "", Hints{})
 	if err != nil {
 		t.Fatalf("ResolveOrLinkChannel after lock: %v", err)
 	}

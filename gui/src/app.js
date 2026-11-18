@@ -3366,7 +3366,7 @@ function scheduleActiveConversationRender() {
 function setupRealtimeEvents() {
   window.conduitAPI.onEvent((envelope) => {
     console.log('Evento gRPC recibido:', envelope);
-    if (envelope.channel_status_update) {
+    if (envelope.channel_status_update && envelope.type !== 'sync.progress') {
       const statusText = String(envelope.channel_status_update);
       checkDaemonStatus();
       loadAccounts();
