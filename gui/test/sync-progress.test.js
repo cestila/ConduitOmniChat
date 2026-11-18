@@ -37,5 +37,18 @@ const { createHarness, createChecker } = require('./dom-harness');
 
   check('modal se oculta automáticamente al finalizar', app.el.syncProgressModal.classList.contains('hidden'));
 
+  app.emitEvent({
+    type: 'sync.progress',
+    channel_status_update: JSON.stringify({
+      provider: 'telegram',
+      completed: 15,
+      total: 15,
+      status: 'syncing'
+    })
+  });
+  await new Promise(r => setTimeout(r, 450));
+
+  check('modal también se oculta al llegar a 15 / 15 aunque falte evento done', app.el.syncProgressModal.classList.contains('hidden'));
+
   finish();
 })();

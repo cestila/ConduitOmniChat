@@ -197,6 +197,7 @@ const initialContacts = [
   });
   const updatedAna = app.state.contacts.find(c => c.id === 'contact-ana');
   check('contact_updated actualiza el contacto en state.contacts', !!updatedAna && updatedAna.display_name === 'Ana María López');
+  await new Promise(r => setTimeout(r, 180));
   check('contact_updated re-renderiza la lista de contactos', el.contactsList.children.some(r => (r.innerHTML || '').includes('Ana María López')));
 
   finish();

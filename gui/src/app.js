@@ -2999,11 +2999,15 @@ function setupRealtimeEvents() {
       } else {
         state.contacts.push(updated);
       }
-      renderContactsList();
+      scheduleContactsRender();
       if (state.activeConversationId) {
         const activeConv = state.conversations.find(c => c.id === state.activeConversationId);
         if (activeConv && (activeConv.contact_id === updated.id || activeConv.id === updated.id)) {
+          const prevChannel = el.channelSelect ? el.channelSelect.value : '';
           updateChannelSelector(activeConv);
+          if (el.channelSelect && prevChannel && Array.from(el.channelSelect.options).some(o => o.value === prevChannel)) {
+            el.channelSelect.value = prevChannel;
+          }
         }
       }
       return;
@@ -3167,6 +3171,15 @@ function scheduleConversationsRefresh() {
   }, 250);
 }
 
+let contactsRenderTimer = null;
+function scheduleContactsRender() {
+  if (contactsRenderTimer) return;
+  contactsRenderTimer = setTimeout(() => {
+    contactsRenderTimer = null;
+    renderContactsList();
+  }, 150);
+}
+
 const syncProgressByProvider = new Map();
 let syncHideTimer = null;
 let syncDismissedByUser = false;
@@ -3196,7 +3209,8 @@ function handleSyncProgressEvent(rawPayload) {
   syncProgressByProvider.forEach((entry, prov) => {
     totalSum += entry.total;
     completedSum += Math.min(entry.completed, entry.total);
-    if (entry.status !== 'done') {
+    const isEntryDone = entry.status === 'done' || (entry.total > 0 && entry.completed >= entry.total);
+    if (!isEntryDone) {
       anySyncing = true;
       activeProviders.push(prov);
     }
