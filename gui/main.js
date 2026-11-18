@@ -15,6 +15,7 @@ let daemonManager = null;
 let isQuitting = false;
 let autoUpdaterInstance = null;
 let updateDownloaded = false;
+let lastUpdateAvailable = false;
 let startupUpdateTimer = null;
 
 function getAppInfo() {
@@ -49,9 +50,11 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
+    lastUpdateAvailable = false;
     sendAppUpdateEvent('checking-for-update');
   });
   autoUpdater.on('update-available', (updateInfo) => {
+    lastUpdateAvailable = true;
     updateDownloaded = false;
     sendAppUpdateEvent('update-available', {
       version: updateInfo?.version || '',
@@ -61,6 +64,7 @@ function setupAutoUpdater() {
     });
   });
   autoUpdater.on('update-not-available', (updateInfo) => {
+    lastUpdateAvailable = false;
     sendAppUpdateEvent('update-not-available', {
       version: updateInfo?.version || ''
     });
@@ -461,13 +465,19 @@ function setupIpcHandlers() {
   ipcMain.handle('conduit:checkAppUpdate', async () => {
     const info = getAppInfo();
     if (!autoUpdaterInstance) {
-      return { supported: false, packagingMode: info.packagingMode };
+      return { supported: false, updateAvailable: false, packagingMode: info.packagingMode };
     }
     try {
       const result = await autoUpdaterInstance.checkForUpdates();
+      const updateAvailable = Boolean(
+        result && typeof result.isUpdateAvailable === 'boolean'
+          ? result.isUpdateAvailable
+          : lastUpdateAvailable || (result?.updateInfo?.version && result.updateInfo.version !== app.getVersion())
+      );
       return {
         supported: true,
-        updateInfo: result && result.updateInfo
+        updateAvailable,
+        updateInfo: updateAvailable && result && result.updateInfo
           ? {
               version: result.updateInfo.version,
               releaseDate: result.updateInfo.releaseDate
@@ -475,7 +485,7 @@ function setupIpcHandlers() {
           : null
       };
     } catch (err) {
-      return { supported: true, error: err.message };
+      return { supported: true, updateAvailable: false, error: err.message };
     }
   });
 
