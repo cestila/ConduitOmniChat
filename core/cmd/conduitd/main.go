@@ -43,10 +43,20 @@ func main() {
 	execPath, _ := os.Executable()
 	baseDir := filepath.Dir(execPath)
 	cwd, _ := os.Getwd()
-	pluginDirs := pluginmgr.SearchDirs(os.Getenv("CONDUIT_PLUGIN_DIR"), dataDir, baseDir, cwd)
+	envPluginDir := os.Getenv("CONDUIT_PLUGIN_DIR")
+	pluginDirs := pluginmgr.SearchDirs(envPluginDir, dataDir, baseDir, cwd)
+
+	// En perfil de testing (CONDUIT_PLUGIN_DIR), instalar/actualizar/desinstalar en esa carpeta
+	// para no pisar los plugins del sistema en ~/.local/share/conduit/plugins.
+	installPluginDir := filepath.Join(dataDir, "plugins")
+	if envPluginDir != "" {
+		if parts := filepath.SplitList(envPluginDir); len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			installPluginDir = strings.TrimSpace(parts[0])
+		}
+	}
 
 	// Subcomandos (plugin install/list/remove/check/update, help): terminan antes de arrancar el daemon.
-	cliInstaller := plugininstall.New(filepath.Join(dataDir, "plugins"))
+	cliInstaller := plugininstall.New(installPluginDir)
 	manifestStore := pluginmgr.NewManifestStore(filepath.Join(dataDir, "plugins-manifest.json"))
 	registryClient := pluginmgr.NewRegistryClient("", "", pluginmgr.DefaultRegistryTTL)
 	if handled, code := runCLI(os.Args[1:], os.Stdout, os.Stderr, cliDeps{

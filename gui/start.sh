@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "$CONDUIT_PLUGIN_DIR" ]; then
+    mkdir -p "$REPO_ROOT/bin/plugins"
+    export CONDUIT_PLUGIN_DIR="$REPO_ROOT/bin/plugins"
+fi
+
 # Locate Electron: $ELECTRON_PATH, then a system electron, then node_modules
 if [ -n "$ELECTRON_PATH" ] && [ -x "$ELECTRON_PATH" ]; then
     ELECTRON_BIN="$ELECTRON_PATH"
