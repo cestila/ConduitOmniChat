@@ -14,6 +14,8 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
 ### Added
 
 - Build-time version injection (`core/pkg/buildinfo`), `conduitd version`, and `GetStatusResponse` version/protocol reporting (`core_version`, `protocol_version`, `tui_version`).
@@ -24,6 +26,7 @@ listed under an **SDK** heading inside each version.
 - Real-time outgoing message status updates (`pending`, `sent`, `delivered`, `read`, `failed`) via `EventEnvelope.message_status_updated` and status check icons in the GUI.
 - Plugin/account disconnection detection and live `channel_status_update` banner in the GUI (`channel.disconnected` and `StreamIncomingEvents` stream errors).
 - `RenameContact` RPC and inline chat header rename with `name_locked` protection against resync overwrites, plus `IsLegibleName` preference and phone fallback display for symbol-only PushNames.
+- Multi-account contact unification and `SyncContacts` / `StartChat` RPCs with live `ContactUpdatedEvent` updates and sync progress indicator.
 
 ### Fixed
 
@@ -34,7 +37,7 @@ listed under an **SDK** heading inside each version.
 
 ### SDK
 
-- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, `MarkPluginsSeen`, and `RenameContact` RPCs and extended `PluginInfo`, `GetStatusResponse`, `ProtoContact`, `ProtoConversation`, and `EventEnvelope` in `sdk/proto/conduit.proto` (`sdk/conduitv1`).
+- Added `UninstallPlugin`, `UpdatePlugin`, `CheckUpdates`, `MarkPluginsSeen`, `SyncContacts`, `StartChat`, and `RenameContact` RPCs and extended `PluginInfo`, `GetStatusResponse`, `ProtoContact`, `ProtoConversation`, and `EventEnvelope` in `sdk/proto/conduit.proto` (`sdk/conduitv1`, `sdk/v0.2.0`).
 
 ## [0.1.2] - 2026-11-17
 
@@ -91,7 +94,8 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.0

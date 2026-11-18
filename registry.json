@@ -2,14 +2,14 @@
   "schema_version": 1,
   "updated_at": "2026-11-18T12:00:00Z",
   "core": {
-    "version": "0.1.2",
-    "tag": "v0.1.2",
-    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.2"
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.0"
   },
   "gui": {
-    "version": "0.1.2",
-    "tag": "v0.1.2",
-    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.1.2"
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.0"
   },
   "plugins": [
     {

@@ -290,7 +290,7 @@ func TestSeededRegistryJSONValid(t *testing.T) {
 	if reg.SchemaVersion != 1 {
 		t.Fatalf("expected schema_version 1, got %d", reg.SchemaVersion)
 	}
-	if reg.Core.Version != "0.1.2" || reg.GUI.Version != "0.1.2" {
+	if reg.Core.Version == "" || reg.Core.Tag != "v"+reg.Core.Version || reg.GUI.Version == "" || reg.GUI.Tag != "v"+reg.GUI.Version {
 		t.Fatalf("unexpected core/gui versions: core=%+v gui=%+v", reg.Core, reg.GUI)
 	}
 	if len(reg.Plugins) != 2 {

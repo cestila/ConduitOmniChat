@@ -11,7 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        version = "0.1.2";
+        version = "0.2.0";
 
         # -------------------------------------------------------------
         # 1. Official Precompiled Binary Release (Default)
