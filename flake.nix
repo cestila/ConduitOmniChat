@@ -112,6 +112,14 @@ DESKTOP
 
           subPackages = [ "cmd/conduitd" ];
 
+          ldflags = [
+            "-s"
+            "-w"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Version=v${version}-dev"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Commit=${self.shortRev or self.dirtyShortRev or "nix"}"
+            "-X github.com/cestila/ConduitOmniChat/core/pkg/buildinfo.Date=${self.lastModifiedDate or "unknown"}"
+          ];
+
           meta = with pkgs.lib; {
             description = "Background daemon for ConduitOmniChat (Built from source)";
             homepage = "https://github.com/cestila/ConduitOmniChat";

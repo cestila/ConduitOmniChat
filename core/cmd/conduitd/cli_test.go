@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/plugininstall"
 )
 
@@ -60,6 +61,7 @@ func TestCLIHelp(t *testing.T) {
 			"  plugin install   download a plugin from its GitHub release, verify its SHA-256 and install it\n" +
 			"  plugin list      list the installed plugin binaries\n" +
 			"  plugin remove    delete an installed plugin binary\n" +
+			"  version          print version and build information\n" +
 			"\nPlugin directories (highest precedence first):\n  /a/plugins\n  /b\n" +
 			"\nEnvironment:\n" +
 			"  CONDUIT_PLUGIN_DIR   extra plugin directories searched first\n" +
@@ -154,4 +156,42 @@ func TestCLIRemove(t *testing.T) {
 	if strings.Contains(errOut, "usage") {
 		t.Fatal("sin uso")
 	}
+}
+
+func TestRunCLIVersion(t *testing.T) {
+	origVersion, origCommit, origDate := buildinfo.Version, buildinfo.Commit, buildinfo.Date
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.Commit, buildinfo.Date = origVersion, origCommit, origDate
+	})
+
+	t.Run("default version flags", func(t *testing.T) {
+		for _, arg := range []string{"version", "--version", "-v"} {
+			handled, code, out, errOut := run(t, cliDeps{}, arg)
+			if !handled || code != 0 || errOut != "" {
+				t.Fatalf("%s: handled=%v code=%d errOut=%q", arg, handled, code, errOut)
+			}
+			if !strings.Contains(out, buildinfo.Version) {
+				t.Fatalf("%s: output %q does not contain %q", arg, out, buildinfo.Version)
+			}
+		}
+	})
+
+	t.Run("injected build metadata", func(t *testing.T) {
+		buildinfo.Version = "v0.1.2"
+		buildinfo.Commit = "abc1234"
+		buildinfo.Date = "2026-11-18"
+		handled, code, out, errOut := run(t, cliDeps{}, "version")
+		want := "conduitd v0.1.2 (commit abc1234, built 2026-11-18)\n"
+		if !handled || code != 0 || errOut != "" || out != want {
+			t.Fatalf("got handled=%v code=%d out=%q errOut=%q, want out=%q", handled, code, out, errOut, want)
+		}
+	})
+
+	t.Run("unexpected extra argument", func(t *testing.T) {
+		handled, code, out, errOut := run(t, cliDeps{}, "version", "extra")
+		wantErr := "conduitd: unexpected argument \"extra\"\n\n" + cliUsage
+		if !handled || code != 2 || out != "" || errOut != wantErr {
+			t.Fatalf("got handled=%v code=%d out=%q errOut=%q", handled, code, out, errOut)
+		}
+	})
 }

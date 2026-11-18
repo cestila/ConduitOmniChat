@@ -2,6 +2,11 @@
 GO ?= go
 BIN := bin
 PLUGINS := whatsapp telegram discord
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILDINFO_PKG := github.com/cestila/ConduitOmniChat/core/pkg/buildinfo
+LDFLAGS ?= -X $(BUILDINFO_PKG).Version=$(VERSION) -X $(BUILDINFO_PKG).Commit=$(COMMIT) -X $(BUILDINFO_PKG).Date=$(BUILD_DATE)
 
 .PHONY: proto build daemon plugins tui test test-go test-gui clean
 
@@ -14,7 +19,7 @@ proto: ## Regenerate sdk/conduitv1 from sdk/proto/conduit.proto
 build: daemon plugins
 
 daemon:
-	cd core && $(GO) build -o ../$(BIN)/conduitd ./cmd/conduitd
+	cd core && $(GO) build -ldflags "$(LDFLAGS)" -o ../$(BIN)/conduitd ./cmd/conduitd
 
 plugins:
 	@for p in $(PLUGINS); do \

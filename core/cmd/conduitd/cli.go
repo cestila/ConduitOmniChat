@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
 	"github.com/cestila/ConduitOmniChat/core/pkg/plugininstall"
 	"github.com/cestila/ConduitOmniChat/core/pkg/pluginmgr"
 )
@@ -28,6 +29,7 @@ const cliUsage = `Usage:
   conduitd plugin install <id|owner/repo> [--version vX.Y.Z]
   conduitd plugin list
   conduitd plugin remove <id>
+  conduitd version
   conduitd help
 `
 
@@ -39,6 +41,7 @@ func cliHelp(dirs []string) string {
 	b.WriteString("  plugin install   download a plugin from its GitHub release, verify its SHA-256 and install it\n")
 	b.WriteString("  plugin list      list the installed plugin binaries\n")
 	b.WriteString("  plugin remove    delete an installed plugin binary\n")
+	b.WriteString("  version          print version and build information\n")
 	b.WriteString("\nPlugin directories (highest precedence first):\n")
 	for _, d := range dirs {
 		fmt.Fprintf(&b, "  %s\n", d)
@@ -67,6 +70,12 @@ func runCLI(args []string, stdout, stderr io.Writer, deps cliDeps) (handled bool
 	switch args[0] {
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, cliHelp(deps.PluginDirs))
+		return true, 0
+	case "version", "--version", "-v":
+		if len(args) > 1 {
+			return usageErr("unexpected argument %q", args[1])
+		}
+		fmt.Fprintf(stdout, "conduitd %s\n", buildinfo.Summary())
 		return true, 0
 	case "plugin":
 	default:
