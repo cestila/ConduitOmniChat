@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -44,9 +45,16 @@ func main() {
 	cwd, _ := os.Getwd()
 	pluginDirs := pluginmgr.SearchDirs(os.Getenv("CONDUIT_PLUGIN_DIR"), dataDir, baseDir, cwd)
 
-	// Subcomandos (plugin install/list/remove, help): terminan antes de arrancar el daemon.
+	// Subcomandos (plugin install/list/remove/check/update, help): terminan antes de arrancar el daemon.
 	cliInstaller := plugininstall.New(filepath.Join(dataDir, "plugins"))
-	if handled, code := runCLI(os.Args[1:], os.Stdout, os.Stderr, cliDeps{Installer: cliInstaller, PluginDirs: pluginDirs}); handled {
+	manifestStore := pluginmgr.NewManifestStore(filepath.Join(dataDir, "plugins-manifest.json"))
+	registryClient := pluginmgr.NewRegistryClient("", "", pluginmgr.DefaultRegistryTTL)
+	if handled, code := runCLI(os.Args[1:], os.Stdout, os.Stderr, cliDeps{
+		Installer:  cliInstaller,
+		PluginDirs: pluginDirs,
+		Registry:   registryClient,
+		Manifest:   manifestStore,
+	}); handled {
 		os.Exit(code)
 	}
 
@@ -620,6 +628,10 @@ func main() {
 	rpcService := rpc.NewServer(db, bus, graph, pluginManager)
 	rpcService.SetDownloader(downloader)
 	rpcService.SetPluginInstaller(cliInstaller)
+	rpcService.SetPluginStopper(pluginManager.StopPlugin)
+	rpcService.SetRegistryClient(registryClient)
+	rpcService.SetManifestStore(manifestStore)
+	rpcService.SetTUIVersion(probeTUIVersion(baseDir))
 	// El contexto de la petición RPC termina con ella; el plugin debe vivir con el daemon.
 	rpcService.SetPluginLoader(func(_ context.Context, path string) error {
 		return loadPlugin(context.Background(), path)
@@ -664,4 +676,28 @@ func main() {
 	grpcServer.GracefulStop()
 	_, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+}
+
+func probeTUIVersion(baseDir string) string {
+	bin := filepath.Join(baseDir, "conduit-tui")
+	if _, err := os.Stat(bin); err != nil {
+		found, err := exec.LookPath("conduit-tui")
+		if err != nil {
+			return ""
+		}
+		bin = found
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	for _, f := range fields {
+		if f != "conduit-tui" {
+			return f
+		}
+	}
+	return ""
 }

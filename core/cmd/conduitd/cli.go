@@ -16,12 +16,15 @@ import (
 type pluginInstaller interface {
 	Install(ctx context.Context, spec, version string) (plugininstall.Result, error)
 	Remove(id string) (string, error)
+	IsManagedPath(binaryPath string) bool
 }
 
 // cliDeps are the injectable dependencies of the command line.
 type cliDeps struct {
 	Installer  pluginInstaller
 	PluginDirs []string // search directories in precedence order
+	Registry   *pluginmgr.RegistryClient
+	Manifest   *pluginmgr.ManifestStore
 }
 
 const cliUsage = `Usage:
@@ -29,6 +32,8 @@ const cliUsage = `Usage:
   conduitd plugin install <id|owner/repo> [--version vX.Y.Z]
   conduitd plugin list
   conduitd plugin remove <id>
+  conduitd plugin check
+  conduitd plugin update [<id>|--all]
   conduitd version
   conduitd help
 `
@@ -41,6 +46,8 @@ func cliHelp(dirs []string) string {
 	b.WriteString("  plugin install   download a plugin from its GitHub release, verify its SHA-256 and install it\n")
 	b.WriteString("  plugin list      list the installed plugin binaries\n")
 	b.WriteString("  plugin remove    delete an installed plugin binary\n")
+	b.WriteString("  plugin check     check for plugin, Core, and TUI updates\n")
+	b.WriteString("  plugin update    update one plugin or all managed plugins\n")
 	b.WriteString("  version          print version and build information\n")
 	b.WriteString("\nPlugin directories (highest precedence first):\n")
 	for _, d := range dirs {
@@ -152,6 +159,160 @@ func runCLI(args []string, stdout, stderr io.Writer, deps cliDeps) (handled bool
 		}
 		fmt.Fprintf(stdout, "removed %s (%s)\n", rest[0], path)
 		return true, 0
+
+	case "check":
+		if len(rest) > 0 {
+			return usageErr("unexpected argument %q", rest[0])
+		}
+		if err := runPluginCheck(context.Background(), stdout, deps); err != nil {
+			return opErr(err)
+		}
+		return true, 0
+
+	case "update":
+		targetID, all := "", false
+		for _, a := range rest {
+			switch {
+			case a == "--all":
+				all = true
+			case strings.HasPrefix(a, "-"):
+				return usageErr("unknown flag %q", a)
+			case targetID == "":
+				targetID = a
+			default:
+				return usageErr("unexpected argument %q", a)
+			}
+		}
+		if all && targetID != "" {
+			return usageErr("specify either a plugin id or --all, not both")
+		}
+		if !all && targetID == "" {
+			return usageErr("plugin update needs a plugin id or --all")
+		}
+		if err := runPluginUpdate(context.Background(), stdout, deps, targetID, all); err != nil {
+			return opErr(err)
+		}
+		return true, 0
 	}
 	return usageErr("unknown plugin subcommand %q", args[1])
+}
+
+func binaryPluginID(p string) string {
+	id := strings.TrimPrefix(filepath.Base(p), pluginmgr.BinaryPrefix)
+	if n := len(id); n > 4 && strings.EqualFold(id[n-4:], ".exe") {
+		id = id[:n-4]
+	}
+	return id
+}
+
+func runPluginCheck(ctx context.Context, stdout io.Writer, deps cliDeps) error {
+	reg := pluginmgr.CatalogRegistry()
+	reachable := false
+	if deps.Registry != nil {
+		fetched, ok, _ := deps.Registry.Fetch(ctx, true)
+		reachable = ok
+		if fetched != nil {
+			reg = fetched
+		}
+		if reachable && deps.Manifest != nil {
+			_ = deps.Manifest.MergeRemote(reg)
+		}
+	}
+	var local *pluginmgr.LocalManifest
+	if deps.Manifest != nil {
+		local, _ = deps.Manifest.Load()
+	}
+	if !reachable && deps.Registry != nil {
+		fmt.Fprintln(stdout, "note: remote registry unreachable; showing cached/catalog state")
+	}
+
+	regByID := map[string]pluginmgr.RegistryPlugin{}
+	for _, rp := range reg.Plugins {
+		regByID[rp.ID] = rp
+	}
+
+	bins := pluginmgr.FindBinaries(deps.PluginDirs)
+	if len(bins) == 0 {
+		fmt.Fprintln(stdout, "no plugins installed")
+		return nil
+	}
+	for _, p := range bins {
+		id := binaryPluginID(p)
+		installed := "unknown"
+		latest := "-"
+		status := "ok"
+		if local != nil {
+			if rec, ok := local.Plugins[id]; ok {
+				if rec.InstalledVersion != "" {
+					installed = rec.InstalledVersion
+				}
+				if rec.LatestVersion != "" {
+					latest = rec.LatestVersion
+				}
+			}
+		}
+		if rp, ok := regByID[id]; ok && rp.LatestVersion != "" {
+			latest = rp.LatestVersion
+		}
+		if installed != "unknown" && latest != "-" && pluginmgr.CompareSemver(latest, installed) > 0 {
+			status = "update-available"
+		}
+		if deps.Installer != nil && !deps.Installer.IsManagedPath(p) {
+			status = "managed-externally"
+		}
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", id, installed, latest, status)
+	}
+	return nil
+}
+
+func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, targetID string, all bool) error {
+	if deps.Installer == nil {
+		return fmt.Errorf("plugin installer is not available")
+	}
+	var local *pluginmgr.LocalManifest
+	if deps.Manifest != nil {
+		local, _ = deps.Manifest.Load()
+	}
+
+	bins := pluginmgr.FindBinaries(deps.PluginDirs)
+	binByID := map[string]string{}
+	for _, p := range bins {
+		binByID[binaryPluginID(p)] = p
+	}
+
+	var targets []string
+	if all {
+		if len(bins) == 0 {
+			fmt.Fprintln(stdout, "no plugins installed")
+			return nil
+		}
+		for _, p := range bins {
+			id := binaryPluginID(p)
+			if !deps.Installer.IsManagedPath(p) {
+				fmt.Fprintf(stdout, "skipped %s (managed externally at %s)\n", id, p)
+				continue
+			}
+			targets = append(targets, id)
+		}
+	} else {
+		if p, ok := binByID[targetID]; ok && !deps.Installer.IsManagedPath(p) {
+			return fmt.Errorf("plugin %q is managed externally (%s) and cannot be updated", targetID, p)
+		}
+		targets = []string{targetID}
+	}
+
+	for _, id := range targets {
+		spec := id
+		if _, ok := pluginmgr.CatalogEntryFor(id); !ok && local != nil {
+			if rec, ok := local.Plugins[id]; ok && rec.Repository != "" {
+				spec = rec.Repository
+			}
+		}
+		res, err := deps.Installer.Install(ctx, spec, "")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "updated %s %s -> %s\n", res.ID, res.Version, res.Path)
+	}
+	return nil
 }
