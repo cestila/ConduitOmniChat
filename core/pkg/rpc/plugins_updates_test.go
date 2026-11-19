@@ -349,6 +349,10 @@ func TestInstallPluginAcceptsThirdPartyAndRejectsIncompatible(t *testing.T) {
 		t.Cleanup(func() { buildinfo.Version = origVer })
 
 		regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/" {
+				http.NotFound(w, r)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(pluginmgr.Registry{
 				SchemaVersion: 1,
 				Plugins: []pluginmgr.RegistryPlugin{
@@ -367,7 +371,7 @@ func TestInstallPluginAcceptsThirdPartyAndRejectsIncompatible(t *testing.T) {
 		srv, _ := newMediaTestServer(t)
 		fi := &fakePluginInstaller{}
 		srv.SetPluginInstaller(fi)
-		srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, "", time.Minute))
+		srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, regSrv.URL, time.Minute))
 
 		resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "telegram"})
 		if err != nil {
@@ -380,6 +384,10 @@ func TestInstallPluginAcceptsThirdPartyAndRejectsIncompatible(t *testing.T) {
 
 	t.Run("rejects missing dependency", func(t *testing.T) {
 		regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/" {
+				http.NotFound(w, r)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(pluginmgr.Registry{
 				SchemaVersion: 1,
 				Plugins: []pluginmgr.RegistryPlugin{
@@ -397,7 +405,7 @@ func TestInstallPluginAcceptsThirdPartyAndRejectsIncompatible(t *testing.T) {
 		srv, _ := newMediaTestServer(t)
 		fi := &fakePluginInstaller{}
 		srv.SetPluginInstaller(fi)
-		srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, "", time.Minute))
+		srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, regSrv.URL, time.Minute))
 
 		resp, err := srv.InstallPlugin(context.Background(), &conduitv1.InstallPluginRequest{PluginId: "telegram"})
 		if err != nil {
@@ -416,7 +424,7 @@ func TestCheckUpdatesOfflineReturnsUnreachableGracefully(t *testing.T) {
 	closedURL := closedSrv.URL
 	closedSrv.Close()
 
-	srv.SetRegistryClient(pluginmgr.NewRegistryClient(closedURL, "", time.Minute))
+	srv.SetRegistryClient(pluginmgr.NewRegistryClient(closedURL, closedURL, time.Minute))
 	store := pluginmgr.NewManifestStore(filepath.Join(t.TempDir(), "plugins-manifest.json"))
 	srv.SetManifestStore(store)
 
@@ -477,6 +485,10 @@ func TestGetStatusReturnsBuildAndProtocolAndTUIVersion(t *testing.T) {
 
 func TestCheckUpdatesGuiVersionComparison(t *testing.T) {
 	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"schema_version": 1,
@@ -488,7 +500,7 @@ func TestCheckUpdatesGuiVersionComparison(t *testing.T) {
 
 	srv, _ := newMediaTestServer(t)
 	srv.SetTUIVersion("0.0.1") // Must be ignored for gui_update_available.
-	srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, "", time.Minute))
+	srv.SetRegistryClient(pluginmgr.NewRegistryClient(regSrv.URL, regSrv.URL, time.Minute))
 	srv.SetManifestStore(pluginmgr.NewManifestStore(filepath.Join(t.TempDir(), "plugins-manifest.json")))
 
 	cases := []struct {
@@ -517,5 +529,98 @@ func TestCheckUpdatesGuiVersionComparison(t *testing.T) {
 					resp.GuiUpdateAvailable, tc.wantUpdate, tc.guiVersion, resp.GuiLatestVersion)
 			}
 		})
+	}
+}
+
+func TestCheckUpdatesResolvesOfficialPluginsDirectlyFromRepoReleases(t *testing.T) {
+	var srvHTTP *httptest.Server
+	srvHTTP = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/registry.json":
+			_ = json.NewEncoder(w).Encode(pluginmgr.Registry{
+				SchemaVersion: 1,
+				Core:          pluginmgr.ComponentRelease{Version: "0.2.0", Tag: "v0.2.0"},
+				GUI:           pluginmgr.ComponentRelease{Version: "0.2.0", Tag: "v0.2.0"},
+				Plugins: []pluginmgr.RegistryPlugin{
+					{
+						ID:                 "whatsapp",
+						Name:               "WhatsApp",
+						Repository:         "cestila/conduit-plugin-whatsapp",
+						LatestVersion:      "0.1.2",
+						MinProtocolVersion: 1,
+						MaxProtocolVersion: 1,
+					},
+					{
+						ID:                 "telegram",
+						Name:               "Telegram",
+						Repository:         "cestila/conduit-plugin-telegram",
+						LatestVersion:      "0.1.2",
+						MinProtocolVersion: 1,
+						MaxProtocolVersion: 1,
+					},
+				},
+			})
+		case "/repos/cestila/ConduitOmniChat/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.2.1",
+				"html_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.1",
+			})
+		case "/repos/cestila/conduit-plugin-whatsapp/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.1.4",
+				"html_url": "https://github.com/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.4",
+				"assets": []map[string]string{
+					{"name": "plugin-metadata.json", "browser_download_url": srvHTTP.URL + "/assets/wa.json"},
+				},
+			})
+		case "/assets/wa.json":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"min_protocol_version": 1,
+				"max_protocol_version": 1,
+				"min_core_version":     "0.1.0",
+				"dependencies":         []pluginmgr.PluginDependency{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srvHTTP.Close()
+
+	srv, _ := newMediaTestServer(t)
+	mgr := pluginmgr.NewManager()
+	mgr.RegisterInstance("whatsapp", &pluginmgr.Instance{
+		Name:     "whatsapp",
+		Path:     filepath.Join(t.TempDir(), "conduit-plugin-whatsapp"),
+		Manifest: &conduitv1.PluginManifest{Id: "whatsapp", Version: "0.1.3", Provider: conduitv1.Provider_PROVIDER_WHATSAPP},
+	})
+	srv.plugins = mgr
+	srv.SetRegistryClient(pluginmgr.NewRegistryClient(srvHTTP.URL+"/registry.json", srvHTTP.URL, time.Minute))
+	srv.SetManifestStore(pluginmgr.NewManifestStore(filepath.Join(t.TempDir(), "plugins-manifest.json")))
+
+	resp, err := srv.CheckUpdates(context.Background(), &conduitv1.CheckUpdatesRequest{
+		ForceRefresh: true,
+		GuiVersion:   "0.2.0",
+	})
+	if err != nil {
+		t.Fatalf("CheckUpdates error: %v", err)
+	}
+	if !resp.RegistryReachable {
+		t.Fatal("expected RegistryReachable=true")
+	}
+	if resp.CoreLatestVersion != "0.2.1" || !resp.GuiUpdateAvailable {
+		t.Fatalf("expected live Core/GUI 0.2.1 update, got core=%q guiUpdate=%v", resp.CoreLatestVersion, resp.GuiUpdateAvailable)
+	}
+	var wa *conduitv1.ProtoPluginInfo
+	for _, p := range resp.Plugins {
+		if p.Id == "whatsapp" {
+			wa = p
+			break
+		}
+	}
+	if wa == nil {
+		t.Fatal("missing whatsapp plugin in CheckUpdates response")
+	}
+	if wa.LatestVersion != "0.1.4" || !wa.UpdateAvailable || !wa.Compatible {
+		t.Fatalf("expected live whatsapp 0.1.4 updateable+compatible, got %+v", wa)
 	}
 }

@@ -16,11 +16,13 @@ listed under an **SDK** heading inside each version.
 
 ### Changed
 
+- Resolve Core, GUI, and official/third-party plugin latest releases directly from each repository's GitHub Releases (with `ETag` revalidation, web redirect fallback on rate limits, and `plugin-metadata.json` release asset support).
 - Updated `Makefile`, `README.md`, and `docs/RELEASING.md` for standalone `conduit-plugin-*` repositories.
 - Replaced skipped external-binary `pluginmgr` lifecycle tests with a hermetic stub plugin fixture (`core/pkg/pluginmgr/testdata/stubplugin`).
 
 ### Removed
 
+- `.github/workflows/update-registry.yml` (plugin releases no longer require updating `ConduitOmniChat/registry.json`).
 - Legacy in-repo `plugins/` and `tui/` build/test targets from `Makefile` and obsolete ignore entries (`plugins/`, `tui/`, `dist-public/`) from `.gitignore`.
 
 ## [0.2.0] - 2026-11-18

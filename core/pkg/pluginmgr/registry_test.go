@@ -133,12 +133,19 @@ func TestRegistryClientFetchCacheForceAndOfflineFallback(t *testing.T) {
 	statusCode.Store(http.StatusOK)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
 		code := int(statusCode.Load())
 		if code != http.StatusOK {
+			if r.URL.Path == "/" || r.URL.Path == "/registry.json" {
+				hits.Add(1)
+			}
 			w.WriteHeader(code)
 			return
 		}
+		if r.URL.Path != "/" && r.URL.Path != "/registry.json" {
+			http.NotFound(w, r)
+			return
+		}
+		hits.Add(1)
 		_ = json.NewEncoder(w).Encode(Registry{
 			SchemaVersion: 1,
 			UpdatedAt:     "2026-11-18T12:00:00Z",
@@ -300,5 +307,204 @@ func TestSeededRegistryJSONValid(t *testing.T) {
 		if ok, reason := CheckCompatibility(p, reg.Core.Version, pluginsdk.ProtocolVersion, nil); !ok {
 			t.Fatalf("seeded plugin %s failed compatibility check: %s", p.ID, reason)
 		}
+	}
+}
+
+func TestRegistryClientFetchResolvesLivePerRepoReleasesAndMetadata(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/registry.json":
+			_ = json.NewEncoder(w).Encode(Registry{
+				SchemaVersion: 1,
+				Core:          ComponentRelease{Version: "0.2.0", Tag: "v0.2.0"},
+				GUI:           ComponentRelease{Version: "0.2.0", Tag: "v0.2.0"},
+				Plugins: []RegistryPlugin{
+					{
+						ID:                 "whatsapp",
+						Name:               "WhatsApp",
+						Repository:         "cestila/conduit-plugin-whatsapp",
+						LatestVersion:      "0.1.2",
+						MinProtocolVersion: 1,
+						MaxProtocolVersion: 1,
+						MinCoreVersion:     "0.1.0",
+					},
+					{
+						ID:                 "telegram",
+						Name:               "Telegram",
+						Repository:         "cestila/conduit-plugin-telegram",
+						LatestVersion:      "0.1.2",
+						MinProtocolVersion: 1,
+						MaxProtocolVersion: 1,
+						MinCoreVersion:     "0.1.0",
+					},
+				},
+			})
+		case "/repos/cestila/ConduitOmniChat/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.2.1",
+				"html_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.1",
+			})
+		case "/repos/cestila/conduit-plugin-whatsapp/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.1.4",
+				"html_url": "https://github.com/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.4",
+				"assets": []map[string]string{
+					{"name": "plugin-metadata.json", "browser_download_url": srv.URL + "/assets/wa-meta.json"},
+				},
+			})
+		case "/assets/wa-meta.json":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"min_protocol_version": 1,
+				"max_protocol_version": 2,
+				"min_core_version":     "0.2.0",
+				"dependencies":         []PluginDependency{{PluginID: "telegram", MinVersion: "0.1.3"}},
+			})
+		case "/repos/cestila/conduit-plugin-telegram/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.1.5",
+				"html_url": "https://github.com/cestila/conduit-plugin-telegram/releases/tag/v0.1.5",
+				"assets": []map[string]string{
+					{"name": "plugin-metadata.json", "browser_download_url": srv.URL + "/assets/bad-meta.json"},
+				},
+			})
+		case "/assets/bad-meta.json":
+			_, _ = w.Write([]byte("{corrupt-json"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewRegistryClient(srv.URL+"/registry.json", srv.URL, time.Minute)
+	reg, reachable, err := client.Fetch(context.Background(), true)
+	if err != nil || !reachable {
+		t.Fatalf("Fetch() = (reachable=%v, err=%v), want true, nil", reachable, err)
+	}
+	if reg.Core.Version != "0.2.1" || reg.GUI.Version != "0.2.1" {
+		t.Fatalf("expected core/gui 0.2.1, got core=%+v gui=%+v", reg.Core, reg.GUI)
+	}
+
+	byID := map[string]RegistryPlugin{}
+	for _, p := range reg.Plugins {
+		byID[p.ID] = p
+	}
+	wa := byID["whatsapp"]
+	if wa.LatestVersion != "0.1.4" || wa.MinCoreVersion != "0.2.0" || wa.MaxProtocolVersion != 2 || len(wa.Dependencies) != 1 || wa.Dependencies[0].PluginID != "telegram" {
+		t.Fatalf("whatsapp not enriched from per-repo release/metadata: %+v", wa)
+	}
+	tg := byID["telegram"]
+	if tg.LatestVersion != "0.1.5" || tg.MinCoreVersion != "0.1.0" || tg.MinProtocolVersion != 1 {
+		t.Fatalf("telegram version/fallback unexpected with corrupt metadata: %+v", tg)
+	}
+}
+
+func TestRegistryClientETagRevalidation304(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/cestila/conduit-plugin-telegram/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		hits.Add(1)
+		if r.Header.Get("If-None-Match") == `"v0.1.5-etag"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"v0.1.5-etag"`)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tag_name": "v0.1.5",
+			"html_url": "https://github.com/cestila/conduit-plugin-telegram/releases/tag/v0.1.5",
+		})
+	}))
+	defer srv.Close()
+
+	client := NewRegistryClient(srv.URL+"/registry.json", srv.URL, time.Minute)
+	rel1, err := client.FetchLatestRepoRelease(context.Background(), "cestila/conduit-plugin-telegram", false)
+	if err != nil || rel1.Version != "0.1.5" {
+		t.Fatalf("first FetchLatestRepoRelease = (%+v, %v)", rel1, err)
+	}
+
+	rel2, err := client.FetchLatestRepoRelease(context.Background(), "cestila/conduit-plugin-telegram", true)
+	if err != nil || rel2.Version != "0.1.5" {
+		t.Fatalf("304 revalidated FetchLatestRepoRelease = (%+v, %v)", rel2, err)
+	}
+	if hits.Load() != 2 {
+		t.Fatalf("expected 2 requests (initial + force ETag revalidation), got %d", hits.Load())
+	}
+}
+
+func TestRegistryClientWebFallbackOnRateLimit(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer apiSrv.Close()
+
+			webSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/cestila/conduit-plugin-whatsapp/releases/latest":
+					w.Header().Set("Location", "/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.6")
+					w.WriteHeader(http.StatusFound)
+				case "/cestila/conduit-plugin-whatsapp/releases/download/v0.1.6/plugin-metadata.json":
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"min_protocol_version": 1,
+						"max_protocol_version": 1,
+						"min_core_version":     "0.2.0",
+						"dependencies":         []PluginDependency{},
+					})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer webSrv.Close()
+
+			client := NewRegistryClient(apiSrv.URL+"/registry.json", apiSrv.URL, time.Minute)
+			client.SetGitHubWebBase(webSrv.URL)
+
+			rel, err := client.FetchLatestRepoRelease(context.Background(), "cestila/conduit-plugin-whatsapp", false)
+			if err != nil {
+				t.Fatalf("expected web fallback to succeed, got err=%v", err)
+			}
+			if rel.Version != "0.1.6" || rel.Tag != "v0.1.6" || !rel.HasMetadata || rel.MinCoreVersion != "0.2.0" {
+				t.Fatalf("unexpected web fallback release: %+v", rel)
+			}
+		})
+	}
+}
+
+func TestRegistryClientCatalogUnreachableFallsBackToEmbeddedCatalogPlusLiveRepos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/registry.json":
+			w.WriteHeader(http.StatusInternalServerError)
+		case "/repos/cestila/conduit-plugin-whatsapp/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "v0.1.9",
+				"html_url": "https://github.com/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.9",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewRegistryClient(srv.URL+"/registry.json", srv.URL, time.Minute)
+	reg, reachable, err := client.Fetch(context.Background(), true)
+	if err != nil || !reachable {
+		t.Fatalf("expected reachable=true err=nil when live repo releases succeed despite catalog 500, got reachable=%v err=%v", reachable, err)
+	}
+	var waFound bool
+	for _, p := range reg.Plugins {
+		if p.ID == "whatsapp" {
+			waFound = true
+			if p.LatestVersion != "0.1.9" {
+				t.Fatalf("whatsapp LatestVersion = %q, want 0.1.9", p.LatestVersion)
+			}
+		}
+	}
+	if !waFound {
+		t.Fatal("expected whatsapp from embedded catalog fallback")
 	}
 }

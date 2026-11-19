@@ -224,6 +224,11 @@ func runPluginCheck(ctx context.Context, stdout io.Writer, deps cliDeps) error {
 	if deps.Manifest != nil {
 		local, _ = deps.Manifest.Load()
 	}
+	if deps.Registry != nil && local != nil {
+		if deps.Registry.RefreshThirdPartyManifest(ctx, deps.Manifest, local, true) {
+			reachable = true
+		}
+	}
 	if !reachable && deps.Registry != nil {
 		fmt.Fprintln(stdout, "note: remote registry unreachable; showing cached/catalog state")
 	}
@@ -302,6 +307,9 @@ func runPluginUpdate(ctx context.Context, stdout io.Writer, deps cliDeps, target
 	var local *pluginmgr.LocalManifest
 	if deps.Manifest != nil {
 		local, _ = deps.Manifest.Load()
+	}
+	if deps.Registry != nil && local != nil {
+		deps.Registry.RefreshThirdPartyManifest(ctx, deps.Manifest, local, false)
 	}
 
 	regByID := map[string]pluginmgr.RegistryPlugin{}
