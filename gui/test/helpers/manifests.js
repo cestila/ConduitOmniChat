@@ -1,5 +1,5 @@
 // Manifiestos de ejemplo con la forma que entrega ListPlugins (enums como string).
-// Replican los valores de plugins/*/manifest.go para probar la GUI sin daemon.
+// Replican los valores de conduit-plugin-*/manifest.go para probar la GUI sin daemon.
 
 const KIND = {
   text: 'CREDENTIAL_FIELD_KIND_TEXT',
