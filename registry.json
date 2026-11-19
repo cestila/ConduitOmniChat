@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-11-19T15:25:00Z",
+  "updated_at": "2026-11-19T17:25:00Z",
   "core": {
-    "version": "0.2.0",
-    "tag": "v0.2.0",
-    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.0"
+    "version": "0.2.1",
+    "tag": "v0.2.1",
+    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.1"
   },
   "gui": {
-    "version": "0.2.0",
-    "tag": "v0.2.0",
-    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.0"
+    "version": "0.2.1",
+    "tag": "v0.2.1",
+    "release_url": "https://github.com/cestila/ConduitOmniChat/releases/tag/v0.2.1"
   },
   "plugins": [
     {
@@ -17,24 +17,24 @@
       "name": "WhatsApp Multi-Device",
       "description": "Conexión directa vía protocolo Noise/E2EE y código QR",
       "repository": "cestila/conduit-plugin-whatsapp",
-      "latest_version": "0.1.3",
+      "latest_version": "0.1.4",
       "min_protocol_version": 1,
       "max_protocol_version": 1,
       "min_core_version": "0.1.0",
       "dependencies": [],
-      "release_url": "https://github.com/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.3"
+      "release_url": "https://github.com/cestila/conduit-plugin-whatsapp/releases/tag/v0.1.4"
     },
     {
       "id": "telegram",
       "name": "Telegram MTProto",
       "description": "Cliente de usuario personal de alta velocidad con 2FA",
       "repository": "cestila/conduit-plugin-telegram",
-      "latest_version": "0.1.3",
+      "latest_version": "0.1.4",
       "min_protocol_version": 1,
       "max_protocol_version": 1,
       "min_core_version": "0.1.0",
       "dependencies": [],
-      "release_url": "https://github.com/cestila/conduit-plugin-telegram/releases/tag/v0.1.3"
+      "release_url": "https://github.com/cestila/conduit-plugin-telegram/releases/tag/v0.1.4"
     }
   ]
 }

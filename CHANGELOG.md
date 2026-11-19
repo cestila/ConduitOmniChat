@@ -14,6 +14,8 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-19
+
 ### Changed
 
 - Resolve Core, GUI, and official/third-party plugin latest releases directly from each repository's GitHub Releases (with `ETag` revalidation, web redirect fallback on rate limits, and `plugin-metadata.json` release asset support).
@@ -105,7 +107,8 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.0...v0.1.1
