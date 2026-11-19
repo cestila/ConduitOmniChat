@@ -110,16 +110,14 @@ Requirements: Go (version in `core/go.mod`), Node.js 22 for the GUI, and
 `protoc` with `protoc-gen-go`/`protoc-gen-go-grpc` only if you change the proto.
 
 ```sh
-make build        # conduitd -> bin/conduitd, plugins -> bin/plugins/
-make test         # Go tests (sdk, core, plugins) and GUI tests
+make build        # conduitd -> bin/conduitd
+make test         # Go tests (sdk, core) and GUI tests
 make proto        # regenerate sdk/conduitv1 from sdk/proto/conduit.proto
 
 cd gui && npm ci && npm start    # run the desktop app against ./bin
 ```
 
-The development workspace is a Go workspace (`go.work`) with `sdk/`, `core/`
-and the three plugin modules. Published, the plugins live in their own
-repositories.
+This repository contains the `sdk/` and `core/` Go modules alongside the Electron `gui/`. Official plugins live in their own `conduit-plugin-*` repositories; for cross-repo development, use an uncommitted parent `go.work` file (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Project layout
 

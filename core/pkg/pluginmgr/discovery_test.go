@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -61,20 +62,18 @@ func TestFindBinariesFiltersAndKeepsFirstByName(t *testing.T) {
 	}
 }
 
-func builtPlugin(t *testing.T, name string) string {
+func stubPluginBinary(t *testing.T) string {
 	t.Helper()
-	path, err := filepath.Abs("../../../bin/plugins/conduit-plugin-" + name)
-	if err != nil {
-		t.Fatal(err)
+	binPath := filepath.Join(t.TempDir(), "conduit-plugin-stub")
+	cmd := exec.Command("go", "build", "-o", binPath, "./testdata/stubplugin")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build stub plugin: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("plugin binary not built (run make build): %v", err)
-	}
-	return path
+	return binPath
 }
 
 func TestLaunchDiscoveredRegistersByManifestID(t *testing.T) {
-	path := builtPlugin(t, "discord")
+	path := stubPluginBinary(t)
 	mgr := NewManager()
 	defer mgr.StopAll()
 
@@ -82,10 +81,10 @@ func TestLaunchDiscoveredRegistersByManifestID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LaunchDiscovered: %v", err)
 	}
-	if inst.Name != "discord" || inst.Manifest.GetId() != "discord" || inst.Path != path {
+	if inst.Name != "stub" || inst.Manifest.GetId() != "stub" || inst.Path != path {
 		t.Fatalf("instance = %+v", inst)
 	}
-	if got, ok := mgr.GetInstance("discord"); !ok || got != inst {
+	if got, ok := mgr.GetInstance("stub"); !ok || got != inst {
 		t.Fatalf("instance not registered under manifest id")
 	}
 
@@ -94,25 +93,25 @@ func TestLaunchDiscoveredRegistersByManifestID(t *testing.T) {
 	}
 
 	found := mgr.Discovered()
-	if len(found) != 1 || !found[0].Running || found[0].Manifest.GetId() != "discord" {
+	if len(found) != 1 || !found[0].Running || found[0].Manifest.GetId() != "stub" {
 		t.Fatalf("Discovered() = %+v", found)
 	}
 }
 
 func TestLaunchDiscoveredDisabledIsKnownButNotRunning(t *testing.T) {
-	path := builtPlugin(t, "discord")
+	path := stubPluginBinary(t)
 	mgr := NewManager()
 	defer mgr.StopAll()
 
-	_, err := mgr.LaunchDiscovered(context.Background(), path, func(id string) bool { return id != "discord" })
+	_, err := mgr.LaunchDiscovered(context.Background(), path, func(id string) bool { return id != "stub" })
 	if !errors.Is(err, ErrPluginDisabled) {
 		t.Fatalf("error = %v, want ErrPluginDisabled", err)
 	}
-	if _, ok := mgr.GetInstance("discord"); ok {
+	if _, ok := mgr.GetInstance("stub"); ok {
 		t.Fatal("disabled plugin must not be registered as running")
 	}
 	found := mgr.Discovered()
-	if len(found) != 1 || found[0].Running || found[0].Path != path || found[0].Manifest.GetId() != "discord" {
+	if len(found) != 1 || found[0].Running || found[0].Path != path || found[0].Manifest.GetId() != "stub" {
 		t.Fatalf("Discovered() = %+v", found)
 	}
 }
