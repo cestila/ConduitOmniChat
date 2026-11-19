@@ -158,8 +158,10 @@ func (s *Server) UpdatePlugin(ctx context.Context, req *conduitv1.UpdatePluginRe
 func (s *Server) CheckUpdates(ctx context.Context, req *conduitv1.CheckUpdatesRequest) (*conduitv1.CheckUpdatesResponse, error) {
 	reg, reachable, local := s.fetchRegistryAndManifest(ctx, req.GetForceRefresh())
 
-	if reachable && s.registry != nil && local != nil {
-		s.refreshThirdPartyVersions(ctx, local)
+	if s.registry != nil && local != nil {
+		if s.refreshThirdPartyVersions(ctx, local, req.GetForceRefresh()) {
+			reachable = true
+		}
 	}
 
 	plugins := s.buildPluginInfos(ctx, reg, local)
@@ -251,31 +253,11 @@ func (s *Server) fetchRegistryAndManifest(ctx context.Context, force bool) (*plu
 	return reg, reachable, local
 }
 
-func (s *Server) refreshThirdPartyVersions(ctx context.Context, local *pluginmgr.LocalManifest) {
-	if local == nil || s.registry == nil || s.manifestStore == nil {
-		return
+func (s *Server) refreshThirdPartyVersions(ctx context.Context, local *pluginmgr.LocalManifest, force bool) bool {
+	if s.registry == nil {
+		return false
 	}
-	changed := false
-	now := time.Now().UTC().Format(time.RFC3339)
-	for id, rec := range local.Plugins {
-		if rec.Source != pluginmgr.SourceThirdParty || rec.Repository == "" {
-			continue
-		}
-		ver, relURL, err := s.registry.FetchLatestRepoVersion(ctx, rec.Repository)
-		if err != nil || ver == "" {
-			continue
-		}
-		rec.LatestVersion = ver
-		if relURL != "" {
-			rec.ReleaseURL = relURL
-		}
-		rec.LastCheckedAt = now
-		local.Plugins[id] = rec
-		changed = true
-	}
-	if changed {
-		_ = s.manifestStore.Save(local)
-	}
+	return s.registry.RefreshThirdPartyManifest(ctx, s.manifestStore, local, force)
 }
 
 func (s *Server) buildPluginInfos(ctx context.Context, reg *pluginmgr.Registry, local *pluginmgr.LocalManifest) []*conduitv1.ProtoPluginInfo {

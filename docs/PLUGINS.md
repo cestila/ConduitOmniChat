@@ -139,8 +139,12 @@ conduitd plugin remove <id>
 The installer downloads, from the GitHub Release (latest, or `--version`):
 
 - `conduit-plugin-<id>_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) with
-  the executable at the archive root, and
-- `checksums.txt` with SHA-256 sums.
+  the executable at the archive root,
+- `checksums.txt` with SHA-256 sums, and
+- optionally `plugin-metadata.json` (`min_protocol_version`,
+  `max_protocol_version`, `min_core_version`, `dependencies`), which `conduitd`
+  reads directly from the release alongside the latest tag (`ETag`-cached)
+  without requiring updates to `ConduitOmniChat/registry.json`.
 
 If the checksum is missing or differs, the install fails and the installed
 plugin is left untouched. Each plugin repository includes a

@@ -37,7 +37,8 @@ This document describes how `ConduitOmniChat` and the standalone plugin reposito
    GOWORK=off go get github.com/cestila/ConduitOmniChat/sdk@vX.Y.Z && GOWORK=off go mod tidy
    ```
 2. Open a PR moving **[Unreleased]** entries in the plugin's `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` (`chore(release): vX.Y.Z`) and merge it.
-3. Tag `main` and push the tag (`git switch main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z`). GoReleaser publishes `conduit-plugin-<id>_<version>_<goos>_<goarch>.tar.gz` and `checksums.txt`, and `.github/workflows/update-registry.yml` syncs `registry.json`.
+3. Tag `main` and push the tag (`git switch main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z`). GoReleaser publishes `conduit-plugin-<id>_<version>_<goos>_<goarch>.tar.gz`, `checksums.txt`, and `plugin-metadata.json`.
+   `conduitd` resolves latest versions and compatibility metadata directly from each plugin repository's GitHub Releases (with `ETag` caching), so releasing a plugin requires no changes or PRs in `ConduitOmniChat`.
 4. Verify the published release:
    ```sh
    conduitd plugin install <id>

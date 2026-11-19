@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cestila/ConduitOmniChat/core/pkg/buildinfo"
@@ -27,6 +29,10 @@ const (
 	DefaultGitHubAPIBase = "https://api.github.com"
 	// GitHubAPIBaseEnv overrides the GitHub API root (used by tests).
 	GitHubAPIBaseEnv = "CONDUIT_GITHUB_API"
+	// DefaultGitHubWebBase is the GitHub web root used for redirect fallback on API rate limits.
+	DefaultGitHubWebBase = "https://github.com"
+	// DefaultAppRepository is the GitHub repository hosting Conduit Core and GUI releases.
+	DefaultAppRepository = "cestila/ConduitOmniChat"
 
 	// DefaultRegistryTTL is the default in-memory cache TTL for registry and repo lookups.
 	DefaultRegistryTTL = 15 * time.Minute
@@ -39,7 +45,34 @@ const (
 	SourceThirdParty = "third-party"
 
 	maxRegistryBytes = 4 << 20
+	maxMetadataBytes = 64 << 10
 )
+
+var metadataAssetNames = map[string]bool{
+	"plugin-metadata.json":   true,
+	"registry-metadata.json": true,
+	"metadata.json":          true,
+}
+
+// RepoRelease describes the latest release and optional compatibility metadata
+// resolved directly from a repository's GitHub Releases.
+type RepoRelease struct {
+	Version            string
+	Tag                string
+	ReleaseURL         string
+	MinCoreVersion     string
+	MinProtocolVersion uint32
+	MaxProtocolVersion uint32
+	Dependencies       []PluginDependency
+	HasMetadata        bool
+}
+
+type pluginMetadata struct {
+	MinCoreVersion     string             `json:"min_core_version,omitempty"`
+	MinProtocolVersion uint32             `json:"min_protocol_version,omitempty"`
+	MaxProtocolVersion uint32             `json:"max_protocol_version,omitempty"`
+	Dependencies       []PluginDependency `json:"dependencies,omitempty"`
+}
 
 // PluginDependency declares a required plugin and its minimum version.
 type PluginDependency struct {
@@ -342,16 +375,18 @@ func (s *ManifestStore) MergeRemote(reg *Registry) error {
 }
 
 type repoCacheEntry struct {
-	version    string
-	releaseURL string
-	fetchedAt  time.Time
+	release   RepoRelease
+	etag      string
+	fetchedAt time.Time
 }
 
-// RegistryClient fetches the remote registry.json and third-party GitHub release versions
-// with in-memory TTL caching and offline fallback.
+// RegistryClient resolves the remote catalog and live GitHub release versions
+// per repository with in-memory TTL/ETag caching and offline fallback.
 type RegistryClient struct {
 	url           string
 	githubAPIBase string
+	githubWebBase string
+	appRepository string
 	ttl           time.Duration
 	http          *http.Client
 	now           func() time.Time
@@ -380,6 +415,11 @@ func NewRegistryClient(url, githubAPIBase string, ttl time.Duration) *RegistryCl
 	}
 	githubAPIBase = strings.TrimRight(githubAPIBase, "/")
 
+	githubWebBase := ""
+	if githubAPIBase == DefaultGitHubAPIBase {
+		githubWebBase = DefaultGitHubWebBase
+	}
+
 	if ttl <= 0 {
 		ttl = DefaultRegistryTTL
 	}
@@ -387,11 +427,24 @@ func NewRegistryClient(url, githubAPIBase string, ttl time.Duration) *RegistryCl
 	return &RegistryClient{
 		url:           url,
 		githubAPIBase: githubAPIBase,
+		githubWebBase: githubWebBase,
+		appRepository: DefaultAppRepository,
 		ttl:           ttl,
 		http:          &http.Client{Timeout: DefaultRegistryHTTPTimeout},
 		now:           time.Now,
 		repoCache:     map[string]repoCacheEntry{},
 	}
+}
+
+// SetGitHubWebBase overrides the GitHub web base URL used when API rate limits trigger fallback.
+func (c *RegistryClient) SetGitHubWebBase(base string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.githubWebBase = strings.TrimRight(strings.TrimSpace(base), "/")
+}
+
+func (c *RegistryClient) httpsRequired() bool {
+	return c.githubAPIBase == DefaultGitHubAPIBase
 }
 
 // CatalogRegistry synthesizes a baseline Registry from the embedded Catalog and SDK protocol version.
@@ -418,11 +471,9 @@ func CatalogRegistry() *Registry {
 	return reg
 }
 
-// Fetch retrieves the remote registry, serving from TTL cache unless force is true.
-// When the remote registry is unreachable or fails, Fetch returns a non-nil fallback
-// *Registry (the last cached registry or CatalogRegistry()), reachable=false, and a
-// non-nil error describing the transport/HTTP/decode failure so callers can log the
-// cause while still falling back gracefully without failing the user operation.
+// Fetch retrieves the remote catalog and resolves live versions directly from each repository's
+// GitHub Releases (with TTL caching unless force is true). When both catalog and live repository
+// checks fail, Fetch returns a non-nil fallback *Registry, reachable=false, and a diagnostic error.
 func (c *RegistryClient) Fetch(ctx context.Context, force bool) (*Registry, bool, error) {
 	c.mu.Lock()
 	if !force && c.cached != nil && c.now().Sub(c.fetchedAt) < c.ttl {
@@ -437,9 +488,15 @@ func (c *RegistryClient) Fetch(ctx context.Context, force bool) (*Registry, bool
 		fallback = CatalogRegistry()
 	}
 
-	reg, err := c.fetchRemote(ctx)
-	if err != nil {
-		return fallback, false, err
+	reg, catalogErr := c.fetchRemote(ctx)
+	catalogReachable := catalogErr == nil
+	if !catalogReachable {
+		reg = cloneRegistry(fallback)
+	}
+
+	reposReachable := c.enrichFromRepos(ctx, reg, force)
+	if !catalogReachable && !reposReachable {
+		return fallback, false, catalogErr
 	}
 
 	c.mu.Lock()
@@ -448,6 +505,90 @@ func (c *RegistryClient) Fetch(ctx context.Context, force bool) (*Registry, bool
 	c.mu.Unlock()
 
 	return cloneRegistry(reg), true, nil
+}
+
+func (c *RegistryClient) enrichFromRepos(ctx context.Context, reg *Registry, force bool) bool {
+	if reg == nil || ctx.Err() != nil {
+		return false
+	}
+	var (
+		wg           sync.WaitGroup
+		sem          = make(chan struct{}, 4)
+		anyReachable atomic.Bool
+		coreRel      RepoRelease
+		hasCoreRel   bool
+	)
+
+	if c.appRepository != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rel, err := c.FetchLatestRepoRelease(ctx, c.appRepository, force)
+			if err == nil && strings.HasPrefix(rel.Tag, "v") {
+				coreRel = rel
+				hasCoreRel = true
+				anyReachable.Store(true)
+			}
+		}()
+	}
+
+	for i := range reg.Plugins {
+		repo := strings.TrimSpace(reg.Plugins[i].Repository)
+		if repo == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, repoSlug string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rel, err := c.FetchLatestRepoRelease(ctx, repoSlug, force)
+			if err != nil {
+				return
+			}
+			mergeRepoRelease(&reg.Plugins[idx], rel)
+			anyReachable.Store(true)
+		}(i, repo)
+	}
+
+	wg.Wait()
+
+	if hasCoreRel {
+		comp := ComponentRelease{
+			Version:    coreRel.Version,
+			Tag:        coreRel.Tag,
+			ReleaseURL: coreRel.ReleaseURL,
+		}
+		reg.Core = comp
+		reg.GUI = comp
+	}
+	return anyReachable.Load()
+}
+
+func mergeRepoRelease(p *RegistryPlugin, rel RepoRelease) {
+	if rel.Version != "" {
+		p.LatestVersion = rel.Version
+	}
+	if rel.ReleaseURL != "" {
+		p.ReleaseURL = rel.ReleaseURL
+	}
+	if !rel.HasMetadata {
+		return
+	}
+	if rel.MinProtocolVersion > 0 {
+		p.MinProtocolVersion = rel.MinProtocolVersion
+	}
+	if rel.MaxProtocolVersion > 0 {
+		p.MaxProtocolVersion = rel.MaxProtocolVersion
+	}
+	if rel.MinCoreVersion != "" {
+		p.MinCoreVersion = rel.MinCoreVersion
+	}
+	if rel.Dependencies != nil {
+		p.Dependencies = cloneDependencies(rel.Dependencies)
+	}
 }
 
 func (c *RegistryClient) fetchRemote(ctx context.Context) (*Registry, error) {
@@ -488,71 +629,292 @@ func (c *RegistryClient) fetchRemote(ctx context.Context) (*Registry, error) {
 
 // FetchLatestRepoVersion queries GitHub Releases for the latest release version and URL of owner/repo.
 func (c *RegistryClient) FetchLatestRepoVersion(ctx context.Context, repo string) (version, releaseURL string, err error) {
+	rel, err := c.FetchLatestRepoRelease(ctx, repo, false)
+	if err != nil {
+		return "", "", err
+	}
+	return rel.Version, rel.ReleaseURL, nil
+}
+
+// FetchLatestRepoRelease resolves the latest GitHub Release and optional compatibility metadata
+// for owner/repo using TTL caching, ETag revalidation, and web redirect fallback on rate limits.
+func (c *RegistryClient) FetchLatestRepoRelease(ctx context.Context, repo string, force bool) (RepoRelease, error) {
 	repo = strings.TrimSpace(repo)
-	parts := strings.Split(repo, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || parts[0] == ".." || parts[1] == ".." || strings.ContainsAny(repo, "?#") {
-		return "", "", fmt.Errorf("invalid repository %q", repo)
+	if err := validateRepoSlug(repo); err != nil {
+		return RepoRelease{}, err
 	}
 
 	c.mu.Lock()
-	if cached, ok := c.repoCache[repo]; ok && c.now().Sub(cached.fetchedAt) < c.ttl {
+	cached, hasCached := c.repoCache[repo]
+	webBase := c.githubWebBase
+	if hasCached && !force && c.now().Sub(cached.fetchedAt) < c.ttl {
+		out := cloneRepoRelease(cached.release)
 		c.mu.Unlock()
-		return cached.version, cached.releaseURL, nil
+		return out, nil
 	}
 	c.mu.Unlock()
 
-	endpoint := c.githubAPIBase + "/repos/" + repo + "/releases/latest"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	cachedETag := ""
+	if hasCached {
+		cachedETag = cached.etag
+	}
+
+	rel, etag, notModified, status, err := c.fetchRepoReleaseAPI(ctx, repo, cachedETag)
+	if notModified && hasCached {
+		c.mu.Lock()
+		cached.fetchedAt = c.now()
+		c.repoCache[repo] = cached
+		out := cloneRepoRelease(cached.release)
+		c.mu.Unlock()
+		return out, nil
+	}
+	if err != nil && (status == http.StatusForbidden || status == http.StatusTooManyRequests) && webBase != "" {
+		webRel, webErr := c.fetchRepoReleaseWeb(ctx, webBase, repo)
+		if webErr == nil {
+			rel = webRel
+			etag = ""
+			err = nil
+		}
+	}
 	if err != nil {
-		return "", "", fmt.Errorf("building release request for %s: %w", repo, err)
-	}
-	req.Header.Set("User-Agent", "conduitd-registry-client")
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("fetching latest release for %s: %w", repo, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("github releases API for %s returned HTTP %d", repo, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistryBytes+1))
-	if err != nil {
-		return "", "", fmt.Errorf("reading release response for %s: %w", repo, err)
-	}
-	if len(body) > maxRegistryBytes {
-		return "", "", fmt.Errorf("release response for %s exceeds %d bytes", repo, maxRegistryBytes)
-	}
-
-	var rel struct {
-		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
-	}
-	if err := json.Unmarshal(body, &rel); err != nil {
-		return "", "", fmt.Errorf("decoding release response for %s: %w", repo, err)
-	}
-	tag := strings.TrimSpace(rel.TagName)
-	if tag == "" {
-		return "", "", fmt.Errorf("latest release for %s has empty tag_name", repo)
-	}
-	version = strings.TrimPrefix(tag, "v")
-	releaseURL = strings.TrimSpace(rel.HTMLURL)
-	if releaseURL == "" {
-		releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", repo, tag)
+		return RepoRelease{}, err
 	}
 
 	c.mu.Lock()
 	c.repoCache[repo] = repoCacheEntry{
-		version:    version,
-		releaseURL: releaseURL,
-		fetchedAt:  c.now(),
+		release:   cloneRepoRelease(rel),
+		etag:      etag,
+		fetchedAt: c.now(),
 	}
 	c.mu.Unlock()
 
-	return version, releaseURL, nil
+	return cloneRepoRelease(rel), nil
+}
+
+func validateRepoSlug(repo string) error {
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || parts[0] == ".." || parts[1] == ".." || strings.ContainsAny(repo, "?#") {
+		return fmt.Errorf("invalid repository %q", repo)
+	}
+	return nil
+}
+
+func (c *RegistryClient) fetchRepoReleaseAPI(ctx context.Context, repo, cachedETag string) (rel RepoRelease, etag string, notModified bool, status int, err error) {
+	endpoint := c.githubAPIBase + "/repos/" + repo + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return RepoRelease{}, "", false, 0, fmt.Errorf("building release request for %s: %w", repo, err)
+	}
+	req.Header.Set("User-Agent", "conduitd-registry-client")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if cachedETag != "" {
+		req.Header.Set("If-None-Match", cachedETag)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return RepoRelease{}, "", false, 0, fmt.Errorf("fetching latest release for %s: %w", repo, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified {
+		return RepoRelease{}, cachedETag, true, resp.StatusCode, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return RepoRelease{}, "", false, resp.StatusCode, fmt.Errorf("github releases API for %s returned HTTP %d", repo, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistryBytes+1))
+	if err != nil {
+		return RepoRelease{}, "", false, resp.StatusCode, fmt.Errorf("reading release response for %s: %w", repo, err)
+	}
+	if len(body) > maxRegistryBytes {
+		return RepoRelease{}, "", false, resp.StatusCode, fmt.Errorf("release response for %s exceeds %d bytes", repo, maxRegistryBytes)
+	}
+
+	var payload struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return RepoRelease{}, "", false, resp.StatusCode, fmt.Errorf("decoding release response for %s: %w", repo, err)
+	}
+	tag := strings.TrimSpace(payload.TagName)
+	if tag == "" {
+		return RepoRelease{}, "", false, resp.StatusCode, fmt.Errorf("latest release for %s has empty tag_name", repo)
+	}
+
+	releaseURL := strings.TrimSpace(payload.HTMLURL)
+	if releaseURL == "" {
+		releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", repo, tag)
+	}
+	rel = RepoRelease{
+		Version:    strings.TrimPrefix(tag, "v"),
+		Tag:        tag,
+		ReleaseURL: releaseURL,
+	}
+	for _, asset := range payload.Assets {
+		if metadataAssetNames[strings.ToLower(strings.TrimSpace(asset.Name))] {
+			if meta, ok := c.fetchMetadataAsset(ctx, asset.BrowserDownloadURL); ok {
+				applyMetadata(&rel, meta)
+			}
+			break
+		}
+	}
+	return rel, strings.TrimSpace(resp.Header.Get("ETag")), false, resp.StatusCode, nil
+}
+
+func (c *RegistryClient) fetchRepoReleaseWeb(ctx context.Context, webBase, repo string) (RepoRelease, error) {
+	endpoint := webBase + "/" + repo + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint, nil)
+	if err != nil {
+		return RepoRelease{}, fmt.Errorf("building web release request for %s: %w", repo, err)
+	}
+	req.Header.Set("User-Agent", "conduitd-registry-client")
+
+	noRedirect := *c.http
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		return RepoRelease{}, fmt.Errorf("fetching web release for %s: %w", repo, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+		return RepoRelease{}, fmt.Errorf("web releases endpoint for %s returned HTTP %d", repo, resp.StatusCode)
+	}
+	tag := extractTagFromLocation(resp.Header.Get("Location"))
+	if tag == "" {
+		return RepoRelease{}, fmt.Errorf("web releases redirect for %s missing tag in Location", repo)
+	}
+
+	rel := RepoRelease{
+		Version:    strings.TrimPrefix(tag, "v"),
+		Tag:        tag,
+		ReleaseURL: fmt.Sprintf("%s/%s/releases/tag/%s", webBase, repo, tag),
+	}
+	metaURL := fmt.Sprintf("%s/%s/releases/download/%s/plugin-metadata.json", webBase, repo, tag)
+	if meta, ok := c.fetchMetadataAsset(ctx, metaURL); ok {
+		applyMetadata(&rel, meta)
+	}
+	return rel, nil
+}
+
+func extractTagFromLocation(loc string) string {
+	u, err := url.Parse(strings.TrimSpace(loc))
+	if err != nil {
+		return ""
+	}
+	const marker = "/releases/tag/"
+	idx := strings.Index(u.Path, marker)
+	if idx < 0 {
+		return ""
+	}
+	tag := strings.Trim(u.Path[idx+len(marker):], "/")
+	if tag == "" || strings.Contains(tag, "/") {
+		return ""
+	}
+	return tag
+}
+
+func (c *RegistryClient) fetchMetadataAsset(ctx context.Context, rawURL string) (pluginMetadata, bool) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Host == "" {
+		return pluginMetadata{}, false
+	}
+	if u.Scheme != "https" && (c.httpsRequired() || u.Scheme != "http") {
+		return pluginMetadata{}, false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return pluginMetadata{}, false
+	}
+	req.Header.Set("User-Agent", "conduitd-registry-client")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return pluginMetadata{}, false
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMetadataBytes+1))
+	if err != nil || len(body) > maxMetadataBytes {
+		return pluginMetadata{}, false
+	}
+
+	var meta pluginMetadata
+	if err := json.Unmarshal(body, &meta); err != nil {
+		return pluginMetadata{}, false
+	}
+	return meta, true
+}
+
+func applyMetadata(rel *RepoRelease, meta pluginMetadata) {
+	rel.MinCoreVersion = strings.TrimSpace(meta.MinCoreVersion)
+	rel.MinProtocolVersion = meta.MinProtocolVersion
+	rel.MaxProtocolVersion = meta.MaxProtocolVersion
+	rel.Dependencies = cloneDependencies(meta.Dependencies)
+	if meta.Dependencies != nil && rel.Dependencies == nil {
+		rel.Dependencies = []PluginDependency{}
+	}
+	rel.HasMetadata = true
+}
+
+// RefreshThirdPartyManifest refreshes latest release versions and optional compatibility
+// metadata for installed third-party plugins in local and persists changes via store.
+func (c *RegistryClient) RefreshThirdPartyManifest(ctx context.Context, store *ManifestStore, local *LocalManifest, force bool) bool {
+	if c == nil || local == nil || store == nil {
+		return false
+	}
+	changed := false
+	anyReachable := false
+	now := c.now().UTC().Format(time.RFC3339)
+	for id, rec := range local.Plugins {
+		if rec.Source != SourceThirdParty || rec.Repository == "" {
+			continue
+		}
+		rel, err := c.FetchLatestRepoRelease(ctx, rec.Repository, force)
+		if err != nil || rel.Version == "" {
+			continue
+		}
+		anyReachable = true
+		rec.LatestVersion = rel.Version
+		if rel.ReleaseURL != "" {
+			rec.ReleaseURL = rel.ReleaseURL
+		}
+		if rel.HasMetadata {
+			if rel.MinProtocolVersion > 0 {
+				rec.MinProtocolVersion = rel.MinProtocolVersion
+			}
+			if rel.MaxProtocolVersion > 0 {
+				rec.MaxProtocolVersion = rel.MaxProtocolVersion
+			}
+			if rel.MinCoreVersion != "" {
+				rec.MinCoreVersion = rel.MinCoreVersion
+			}
+			if rel.Dependencies != nil {
+				rec.Dependencies = cloneDependencies(rel.Dependencies)
+			}
+		}
+		rec.LastCheckedAt = now
+		local.Plugins[id] = rec
+		changed = true
+	}
+	if changed {
+		_ = store.Save(local)
+	}
+	return anyReachable
 }
 
 func cloneDependencies(deps []PluginDependency) []PluginDependency {
@@ -562,6 +924,11 @@ func cloneDependencies(deps []PluginDependency) []PluginDependency {
 	out := make([]PluginDependency, len(deps))
 	copy(out, deps)
 	return out
+}
+
+func cloneRepoRelease(rel RepoRelease) RepoRelease {
+	rel.Dependencies = cloneDependencies(rel.Dependencies)
+	return rel
 }
 
 func cloneRegistry(reg *Registry) *Registry {
