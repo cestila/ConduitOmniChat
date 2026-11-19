@@ -67,7 +67,7 @@ DESKTOP
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/conduitd_${version}_linux_amd64.tar.gz";
-            hash = "sha256-UydZXbdKra/eFR+NGZUzZIU/aVwRFfzDzslg4KKvYkM=";
+            hash = "sha256-8BzNqQUgxw27/ZADGkiVIwODkZMlb7tKl5eeCO7SciA=";
           };
 
           sourceRoot = ".";
