@@ -11,7 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        version = "0.2.0";
+        version = "0.2.1";
 
         # -------------------------------------------------------------
         # 1. Official Precompiled Binary Release (Default)
@@ -22,7 +22,7 @@
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-            hash = "sha256-++VLPQUeBGiE2S8qCz99jVhZFzgUfK2Hjdo77bm+Yls=";
+            hash = "sha256-72kPaPEhzX6V3/AOHsqWrhqBJayKvIYjC00GX0Vl2AQ=";
           };
 
           extraPkgs = p: [ ];
@@ -47,7 +47,7 @@ DESKTOP
               inherit version;
               src = pkgs.fetchurl {
                 url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-                hash = "sha256-++VLPQUeBGiE2S8qCz99jVhZFzgUfK2Hjdo77bm+Yls=";
+                hash = "sha256-72kPaPEhzX6V3/AOHsqWrhqBJayKvIYjC00GX0Vl2AQ=";
               };
             }}/usr/share/icons/hicolor/256x256/apps/conduit-gui.png $out/share/icons/hicolor/256x256/apps/
           '';
@@ -67,7 +67,7 @@ DESKTOP
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/conduitd_${version}_linux_amd64.tar.gz";
-            hash = "sha256-8BzNqQUgxw27/ZADGkiVIwODkZMlb7tKl5eeCO7SciA=";
+            hash = "sha256-hYBqkxdhZ9VcmB5TEUJ4XDno6Kx325pMYYnqsBCy7M4=";
           };
 
           sourceRoot = ".";
