@@ -22,7 +22,7 @@
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-            hash = "sha256-2LJ0mvuLPqN7XCRYC3DTmIu5nwC+0ab7j5NcuoCwh8I=";
+            hash = "sha256-++VLPQUeBGiE2S8qCz99jVhZFzgUfK2Hjdo77bm+Yls=";
           };
 
           extraPkgs = p: [ ];
@@ -47,7 +47,7 @@ DESKTOP
               inherit version;
               src = pkgs.fetchurl {
                 url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-                hash = "sha256-2LJ0mvuLPqN7XCRYC3DTmIu5nwC+0ab7j5NcuoCwh8I=";
+                hash = "sha256-++VLPQUeBGiE2S8qCz99jVhZFzgUfK2Hjdo77bm+Yls=";
               };
             }}/usr/share/icons/hicolor/256x256/apps/conduit-gui.png $out/share/icons/hicolor/256x256/apps/
           '';
