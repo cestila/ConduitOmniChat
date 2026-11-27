@@ -82,6 +82,10 @@ func retryOnBusy(ctx context.Context, op func() error) error {
 // generalTopicTitle es el título del tema General de un foro.
 const generalTopicTitle = "General"
 
+// forumTopicSeparator separa el remote id del foro del número de tema en el id de una conversación
+// de tema (`<plugin>:<ServerId>_topic_<N>`).
+const forumTopicSeparator = "_topic_"
+
 // DeleteConversationsAbsentFrom borra, en una sola transacción, las conversaciones de canal
 // cuyo id es `<convPrefix><remote id>` y cuyo remote id está en candidatos del servidor serverID
 // pero no en keep, y cuya última actividad (last_message_at) no es posterior a snapshotAt: la
@@ -249,10 +253,12 @@ func localMediaPaths(ctx context.Context, tx *sql.Tx, convID string) ([]string, 
 
 // rehomeGroupNamedForumConversationsTx repara el pseudo tema con nombre de grupo que el fallback
 // antiguo del plugin creaba al no poder resolver el tema: una conversación `<convPrefix><serverID>`
-// (sin `_topic_`), de tipo 'forum' y sin parent_channel_id. Mueve sus mensajes al tema General
+// (sin `_topic_`), sin parent_channel_id ni contacto, de tipo 'forum' o 'group'. El tipo 'group' se
+// acepta solo cuando el mismo servidor prueba ser un foro (tiene conversaciones de tema, ver
+// serverIsForumTx): un grupo básico de verdad nunca se toca. Mueve sus mensajes al tema General
 // (`<convPrefix><serverID>_topic_1`, se crea si falta) y borra la conversación vieja junto con su
-// fila de canal cuando ya nada la referencia. Nunca toca grupos reales (otro channel_type), temas
-// reales (con parent), DMs (con contacto) ni conversaciones de otro proveedor.
+// fila de canal cuando ya nada la referencia. Nunca toca grupos reales, temas reales (con parent),
+// DMs (con contacto) ni conversaciones de otro proveedor.
 func rehomeGroupNamedForumConversationsTx(ctx context.Context, tx *sql.Tx, convPrefix, provider, serverID string) ([]string, error) {
 	if serverID == "" {
 		return nil, nil
@@ -272,7 +278,23 @@ func rehomeGroupNamedForumConversationsTx(ctx context.Context, tx *sql.Tx, convP
 	if err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(strings.TrimSpace(channelType), "forum") || parent != "" || contactID != "" {
+	if parent != "" || contactID != "" {
+		return nil, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(channelType)) {
+	case "forum":
+		// El tipo declarado ya lo identifica como foro.
+	case "group":
+		// En la base real el pseudo tema quedó tipado 'group': solo se repara si el
+		// servidor prueba ser un foro por tener conversaciones de tema.
+		forum, err := serverIsForumTx(ctx, tx, convPrefix, serverID)
+		if err != nil {
+			return nil, err
+		}
+		if !forum {
+			return nil, nil
+		}
+	default:
 		return nil, nil
 	}
 	if activeChannel != "" {
@@ -382,6 +404,35 @@ func rehomeGroupNamedForumConversationsTx(ctx context.Context, tx *sql.Tx, convP
 		}
 	}
 	return []string{convID}, nil
+}
+
+// serverIsForumTx informa si serverID es un foro según sus conversaciones: existe al menos una
+// conversación de ese servidor cuyo id es `<convPrefix><serverID>_topic_<N>` o cuyo
+// parent_channel_id es el propio servidor. Es la prueba que permite reparar un pseudo tema tipado
+// 'group' sin tocar grupos básicos. El prefijo se compara en Go (caracteres UTF-8 completos).
+func serverIsForumTx(ctx context.Context, tx *sql.Tx, convPrefix, serverID string) (bool, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, coalesce(parent_channel_id, '') FROM conversations WHERE coalesce(server_id, '') = ?`, serverID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	topicIDPrefix := convPrefix + serverID + forumTopicSeparator
+	found := false
+	for rows.Next() {
+		var id, parent string
+		if err := rows.Scan(&id, &parent); err != nil {
+			return false, err
+		}
+		if strings.HasPrefix(id, topicIDPrefix) || parent == serverID {
+			found = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return found, nil
 }
 
 // ensureTopicChannelTx devuelve la fila contact_channels del tema (provider, remoteID), creándola

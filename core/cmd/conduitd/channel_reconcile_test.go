@@ -745,6 +745,85 @@ func TestReconcileLeavesNonForumGroupConversationUntouched(t *testing.T) {
 	}
 }
 
+// En la base real el pseudo tema con nombre de grupo quedó guardado con channel_type 'group' (no
+// 'forum'): el foro se reconoce porque el mismo servidor tiene conversaciones de tema. También debe
+// reubicarse en General y desaparecer.
+func TestReconcileRehomesGroupTypedBareConversationOfForum(t *testing.T) {
+	f := newReconcileFixture(t)
+	sub := f.bus.Subscribe(eventbus.EventConversationDeleted)
+	f.addGroupNamedForumConvAt("telegram", "telegram", "c1", "HerdrGroup", "group", time.Unix(1000, 0))
+	f.addConv("telegram:c1_topic_5", "telegram", "c1_topic_5", "c1", true)
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1\nc1_topic_5"))
+
+	if len(got) != 1 || got[0] != "telegram:c1" {
+		t.Fatalf("esperaba que se informe la conversación reubicada, obtuve %v", got)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM conversations WHERE id = 'telegram:c1'`); n != 0 {
+		t.Fatalf("la conversación con nombre de grupo debería desaparecer, obtuve %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM contact_channels WHERE provider = 'telegram' AND remote_id = 'c1'`); n != 0 {
+		t.Fatalf("la fila de canal del grupo, ya sin referencias, debería borrarse, obtuve %d", n)
+	}
+	g := f.conv("telegram:c1_topic_1")
+	if g.title != "General" || g.parent != "c1" || g.channelType != "forum" || g.serverID != "c1" || g.isGroup != 1 || g.contactID != "" {
+		t.Fatalf("General mal creado: %+v", g)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM messages WHERE conversation_id = 'telegram:c1_topic_1'`); n != 1 {
+		t.Fatalf("el mensaje del grupo debería estar en General, obtuve %d", n)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM messages WHERE conversation_id = 'telegram:c1'`); n != 0 {
+		t.Fatalf("no debería quedar ningún mensaje en la conversación vieja, obtuve %d", n)
+	}
+	f.requireIntact("telegram:c1_topic_5")
+	if evs := drainDeleted(sub); len(evs) != 1 || evs[0].ConversationID != "telegram:c1" || evs[0].ServerID != "c1" {
+		t.Fatalf("debería avisarse el borrado de la conversación vieja, obtuve %v", evs)
+	}
+}
+
+// Un grupo básico de verdad (sin temas propios) no es un foro aunque otro servidor del mismo plugin
+// sí lo sea: su conversación con nombre de grupo no se toca y no se crea General.
+func TestReconcileLeavesGroupTypedBareConversationOfBasicGroupUntouched(t *testing.T) {
+	f := newReconcileFixture(t)
+	sub := f.bus.Subscribe(eventbus.EventConversationDeleted)
+	f.addGroupNamedForumConvAt("telegram", "telegram", "c1", "Grupo Familia", "group", time.Unix(1000, 0))
+	f.addConv("telegram:c2_topic_5", "telegram", "c2_topic_5", "c2", true)
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if len(got) != 0 {
+		t.Fatalf("no debería reubicar ni borrar nada, obtuve %v", got)
+	}
+	f.requireIntact("telegram:c1")
+	if n := f.count(`SELECT COUNT(*) FROM conversations WHERE id = 'telegram:c1_topic_1'`); n != 0 {
+		t.Fatalf("no debería crearse General para un grupo real, obtuve %d", n)
+	}
+	if evs := drainDeleted(sub); len(evs) != 0 {
+		t.Fatalf("no debería publicar eventos, obtuve %v", evs)
+	}
+}
+
+// Una conversación con nombre de grupo de otro servidor u otro plugin no se toca aunque ese servidor
+// sea un foro: solo se repara el servidor del evento.
+func TestReconcileLeavesGroupTypedBareConversationsOfOtherServersUntouched(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.addGroupNamedForumConvAt("telegram", "telegram", "c2", "Otro grupo", "group", time.Unix(1000, 0))
+	f.addConv("telegram:c2_topic_5", "telegram", "c2_topic_5", "c2", true)
+	f.addGroupNamedForumConvAt("discord", "discord", "c1", "Grupo Discord", "group", time.Unix(1000, 0))
+	f.addConv("discord:c1_topic_5", "discord", "c1_topic_5", "c1", true)
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if len(got) != 0 {
+		t.Fatalf("no debería reubicar ni borrar nada, obtuve %v", got)
+	}
+	f.requireIntact("telegram:c2")
+	f.requireIntact("discord:c1")
+	if n := f.count(`SELECT COUNT(*) FROM conversations WHERE id IN ('telegram:c1_topic_1', 'discord:c1_topic_1', 'telegram:c2_topic_1')`); n != 0 {
+		t.Fatalf("no debería crearse General para servidores/proveedores ajenos, obtuve %d", n)
+	}
+}
+
 func TestReconcileLeavesOtherServerAndProviderBareConversationsUntouched(t *testing.T) {
 	f := newReconcileFixture(t)
 	f.addGroupNamedForumConv("telegram", "telegram", "c2", "Otro grupo")  // otro servidor
