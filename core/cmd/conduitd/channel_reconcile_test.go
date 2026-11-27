@@ -830,3 +830,48 @@ func TestReconcileRehomeUnreadableLastMessageAtKeepsGeneralReadable(t *testing.T
 		t.Fatalf("General debe tener last_message_at, obtuve %d", n)
 	}
 }
+
+// Aun con sent_at ilegible en el mensaje movido, General debe quedar legible y con
+// la actividad de sus mensajes cuando la marca del pseudo tema no se podía leer.
+func TestReconcileRehomeUnreadableMessageSentAtKeepsGeneralReadable(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.addGroupNamedForumConv("telegram", "telegram", "c1", "Grupo Familia")
+	var touched int
+	if err := f.db.QueryRowContext(f.ctx, `UPDATE conversations SET last_message_at = 'garbage' WHERE id = 'telegram:c1' RETURNING 1`).Scan(&touched); err != nil {
+		t.Fatalf("no se pudo corromper la conversación: %v", err)
+	}
+	if err := f.db.QueryRowContext(f.ctx, `UPDATE messages SET sent_at = 'garbage' WHERE conversation_id = 'telegram:c1' RETURNING 1`).Scan(&touched); err != nil {
+		t.Fatalf("no se pudo corromper el mensaje: %v", err)
+	}
+
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if _, err := f.db.GetConversationByID(f.ctx, "telegram:c1_topic_1"); err != nil {
+		t.Fatalf("General debe poder leerse, obtuve error: %v", err)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM conversations WHERE id = 'telegram:c1_topic_1' AND last_message_at IS NOT NULL`); n != 1 {
+		t.Fatalf("General debe tener last_message_at, obtuve %d", n)
+	}
+}
+
+// Si General ya existe con una marca ilegible, el rehome la repara con la actividad
+// de los mensajes movidos.
+func TestReconcileRehomeRepairsExistingGeneralUnreadableActivity(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.addGroupNamedForumConv("telegram", "telegram", "c1", "Grupo Familia")
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	var touched int
+	for _, q := range []string{
+		`UPDATE conversations SET last_message_at = 'garbage' WHERE id IN ('telegram:c1', 'telegram:c1_topic_1')`,
+	} {
+		if err := f.db.QueryRowContext(f.ctx, q+` RETURNING 1`).Scan(&touched); err != nil {
+			t.Fatalf("no se pudo corromper: %v", err)
+		}
+	}
+
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if _, err := f.db.GetConversationByID(f.ctx, "telegram:c1_topic_1"); err != nil {
+		t.Fatalf("General debe poder leerse, obtuve error: %v", err)
+	}
+}

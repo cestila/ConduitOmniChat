@@ -263,8 +263,16 @@ func rehomeGroupNamedForumConversationsTx(ctx context.Context, tx *sql.Tx, convP
 		if generalRaw != nil {
 			cur, curOK = parseStoredTime(*generalRaw)
 		}
-		if oldLastOK && (!curOK || oldLast.After(cur)) {
-			if _, err := tx.ExecContext(ctx, `UPDATE conversations SET last_message_at = ? WHERE id = ?`, stripMonotonic(oldLast), generalID); err != nil {
+		candidate, candidateOK := oldLast, oldLastOK
+		if !candidateOK {
+			// La marca del pseudo tema no se pudo leer: la actividad real está en sus
+			// mensajes, que ya se van a mover a General.
+			if at, ok := maxMessageSentAtTx(ctx, tx, convID).(time.Time); ok {
+				candidate, candidateOK = at, true
+			}
+		}
+		if candidateOK && (!curOK || candidate.After(cur)) {
+			if _, err := tx.ExecContext(ctx, `UPDATE conversations SET last_message_at = ? WHERE id = ?`, stripMonotonic(candidate), generalID); err != nil {
 				return nil, err
 			}
 		}
@@ -343,7 +351,8 @@ func maxMessageSentAtTx(ctx context.Context, tx *sql.Tx, convID string) any {
 		if parsed, ok := parseStoredTime(raw.String); ok {
 			return stripMonotonic(parsed)
 		}
-		return raw.String
+		// No se propaga el valor ilegible: General quedaría sin poder leerse.
+		return stripMonotonic(time.Now().UTC())
 	}
 	return stripMonotonic(time.Now().UTC())
 }
