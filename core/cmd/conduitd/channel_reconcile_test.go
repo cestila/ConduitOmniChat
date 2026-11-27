@@ -545,3 +545,72 @@ func TestReconcileKeepsMediaFilesWhenNothingIsDeleted(t *testing.T) {
 		t.Fatalf("el archivo de un tema que sobrevive no debe borrarse")
 	}
 }
+
+func TestRemoveMediaFilesRefusesPathsThroughSymlinkedSubdir(t *testing.T) {
+	base := t.TempDir()
+	media := filepath.Join(base, "media")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{media, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	victim := filepath.Join(outside, "o.png")
+	if err := os.WriteFile(victim, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(media, "linkdir")); err != nil {
+		t.Fatal(err)
+	}
+
+	removeMediaFiles(media, []string{filepath.Join(media, "linkdir", "o.png")})
+
+	if _, err := os.Lstat(victim); err != nil {
+		t.Fatalf("a file outside mediaDir reached through a symlinked subdir must not be deleted")
+	}
+}
+
+// Un hermano con el mismo prefijo textual (`media-evil`) no está dentro de `media`.
+func TestRemoveMediaFilesRefusesSiblingWithSamePrefix(t *testing.T) {
+	base := t.TempDir()
+	media := filepath.Join(base, "media")
+	evil := filepath.Join(base, "media-evil")
+	for _, d := range []string{media, evil} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	victim := filepath.Join(evil, "f")
+	if err := os.WriteFile(victim, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removeMediaFiles(media, []string{victim})
+
+	if _, err := os.Lstat(victim); err != nil {
+		t.Fatalf("media-evil/f no debe borrarse al limpiar media")
+	}
+}
+
+// Si el propio mediaDir es un enlace simbólico, las rutas léxicamente dentro de él siguen funcionando.
+func TestRemoveMediaFilesWorksWhenMediaDirIsSymlink(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "media")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(real, "f.png")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removeMediaFiles(link, []string{filepath.Join(link, "f.png")})
+
+	if fileExists(file) {
+		t.Fatalf("el archivo dentro de un mediaDir simbólico debería borrarse")
+	}
+}

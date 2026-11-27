@@ -57,32 +57,48 @@ func parseReconcileBody(serverID, body string) (live map[string]bool, ok bool) {
 	return live, true
 }
 
+// pathWithin informa si path es root o está bajo root (comparación por componentes, no por
+// prefijo textual: `/x/media-evil` no está dentro de `/x/media`).
+func pathWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // removeMediaFiles borra del disco los archivos de media de adjuntos ya eliminados de la base.
-// Solo toca archivos regulares dentro de mediaDir (nunca fuera, nunca enlaces ni directorios);
+// Solo toca archivos regulares dentro de mediaDir: resuelve los enlaces simbólicos de mediaDir y
+// del directorio padre de cada archivo y exige que sigan dentro (un subdirectorio simbólico no
+// puede sacar el borrado fuera). Si la resolución falla o escapa, omite el archivo sin ruido;
 // ignora los ya ausentes y registra cualquier otro error.
 func removeMediaFiles(mediaDir string, paths []string) {
 	if mediaDir == "" {
 		return
 	}
-	root := filepath.Clean(mediaDir)
+	root, err := filepath.EvalSymlinks(filepath.Clean(mediaDir))
+	if err != nil {
+		return
+	}
 	for _, p := range paths {
 		clean := filepath.Clean(p)
-		rel, err := filepath.Rel(root, clean)
-		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		parent, err := filepath.EvalSymlinks(filepath.Dir(clean))
+		if err != nil || !pathWithin(root, parent) {
 			continue
 		}
-		info, err := os.Lstat(clean)
+		target := filepath.Join(parent, filepath.Base(clean))
+		info, err := os.Lstat(target)
 		if err != nil {
 			if !os.IsNotExist(err) {
-				log.Printf("⚠️ channel.reconcile: no se pudo inspeccionar %s: %v", clean, err)
+				log.Printf("⚠️ channel.reconcile: no se pudo inspeccionar %s: %v", target, err)
 			}
 			continue
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		if err := os.Remove(clean); err != nil && !os.IsNotExist(err) {
-			log.Printf("⚠️ channel.reconcile: no se pudo borrar %s: %v", clean, err)
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			log.Printf("⚠️ channel.reconcile: no se pudo borrar %s: %v", target, err)
 		}
 	}
 }
