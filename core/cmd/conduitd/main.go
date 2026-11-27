@@ -134,6 +134,9 @@ func main() {
 					bus.Publish(eventbus.EventChannelConnected, plugCfg.Name+":disconnected:"+err.Error())
 					break
 				}
+				if routePluginEvent(context.Background(), db, bus, plugCfg, filepath.Join(dataDir, "media"), ev) {
+					continue
+				}
 				switch ev.EventType {
 				case "channel.auth_qr":
 					// Buscar cuenta del proveedor para actualizar estado a pairing y asignar QR
@@ -335,10 +338,6 @@ func main() {
 						Position:        position,
 					}
 					_ = db.EnsureConversation(context.Background(), conv)
-
-				case "channel.reconcile":
-					// Lista viva de temas de un foro: se borran los temas locales que ya no existen.
-					handleChannelReconcile(context.Background(), db, bus, plugCfg, ev)
 
 				case "message.received", "message.sent", "messages.read", "message.reaction", "message.poll_update", "message.edited", "message.deleted", "message.pinned":
 					// Una lectura nunca crea ni reordena: se resuelve aparte contra lo existente.

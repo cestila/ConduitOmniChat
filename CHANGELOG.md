@@ -16,7 +16,7 @@ listed under an **SDK** heading inside each version.
 
 ### Added
 
-- Plugin event `channel.reconcile` (`ServerId` = forum remote id, `Body` = newline-separated live topic remote ids `<ServerId>_topic_<N>`): the core deletes local topic conversations of that server that are no longer in the list (with their messages, attachments, reactions and orphan channel row). Empty, invalid or mismatched lists are ignored; the General topic, DMs, parent groups and other servers/providers are never touched.
+- Plugin event `channel.reconcile` (`ServerId` = forum remote id, `Body` = newline-separated live topic remote ids `<ServerId>_topic_<N>`, `SentAtUnix` = unix time at which the live topic list was fetched; **required**): the core deletes local topic conversations of that server that are no longer in the list (with their messages, attachments, reactions, orphan channel row and the downloaded media files of those attachments inside the Conduit media directory). A topic conversation whose last activity is after `SentAtUnix` is never deleted, and an event without `SentAtUnix` is ignored. Empty, invalid or mismatched lists are ignored; the General topic, DMs, parent groups and other servers/providers are never touched.
 - `conversation.deleted` event on the `StreamEvents` stream (carried in `channel_status_update` as JSON `{"conversation_id","server_id"}`) so clients can refresh when a conversation is removed.
 
 ## [0.2.1] - 2026-11-19

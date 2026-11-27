@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,10 +14,11 @@ import (
 )
 
 type reconcileFixture struct {
-	t   *testing.T
-	db  *storage.DB
-	bus *eventbus.Bus
-	ctx context.Context
+	t     *testing.T
+	db    *storage.DB
+	bus   *eventbus.Bus
+	ctx   context.Context
+	media string // directorio de media de la prueba
 }
 
 func newReconcileFixture(t *testing.T) *reconcileFixture {
@@ -26,13 +28,19 @@ func newReconcileFixture(t *testing.T) *reconcileFixture {
 		t.Fatalf("error creando base: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return &reconcileFixture{t: t, db: db, bus: eventbus.NewBus(), ctx: context.Background()}
+	return &reconcileFixture{t: t, db: db, bus: eventbus.NewBus(), ctx: context.Background(), media: t.TempDir()}
 }
 
 // addConv crea una conversación de canal/tema con su fila contact_channels (sin contacto),
 // un mensaje, un adjunto y una reacción. convID y remoteID son independientes para poder
 // simular otros plugins con los mismos remote ids.
 func (f *reconcileFixture) addConv(convID, provider, remoteID, serverID string, withChannel bool) {
+	f.t.Helper()
+	f.addConvAt(convID, provider, remoteID, serverID, withChannel, time.Unix(1000, 0))
+}
+
+// addConvAt es addConv con la última actividad (conversación y mensaje) en `at`.
+func (f *reconcileFixture) addConvAt(convID, provider, remoteID, serverID string, withChannel bool, at time.Time) {
 	f.t.Helper()
 	chanID := "ch-" + convID
 	if withChannel {
@@ -41,7 +49,7 @@ func (f *reconcileFixture) addConv(convID, provider, remoteID, serverID string, 
 		}
 	}
 	if err := f.db.EnsureConversation(f.ctx, &domain.Conversation{
-		ID: convID, IsGroup: true, Title: convID, LastMessageAt: time.Unix(1000, 0),
+		ID: convID, IsGroup: true, Title: convID, LastMessageAt: at,
 		ActiveChannelID: &chanID, ServerID: serverID, ParentChannelID: serverID, ChannelType: "forum",
 	}); err != nil {
 		f.t.Fatalf("EnsureConversation: %v", err)
@@ -50,7 +58,7 @@ func (f *reconcileFixture) addConv(convID, provider, remoteID, serverID string, 
 	if err := f.db.SaveMessage(f.ctx, &domain.Message{
 		ID: msgID, ConversationID: convID, ChannelID: chanID, RemoteMessageID: "r-" + convID,
 		SenderType: domain.SenderContact, Body: "hola " + convID, ContentType: domain.ContentTypeText,
-		Status: domain.StatusDelivered, SentAt: time.Unix(1000, 0),
+		Status: domain.StatusDelivered, SentAt: at,
 	}); err != nil {
 		f.t.Fatalf("SaveMessage: %v", err)
 	}
@@ -94,8 +102,16 @@ func (f *reconcileFixture) requireGone(convID string) {
 	}
 }
 
+// snapshotAt es la hora (unix) a la que los tests dicen haber obtenido la lista viva de temas:
+// mayor que la actividad de las conversaciones por defecto (1000).
+const snapshotAt = 2000
+
 func reconcileEvent(serverID, body string) *conduitv1.PluginEvent {
-	return &conduitv1.PluginEvent{EventType: "channel.reconcile", ServerId: serverID, Body: body}
+	return reconcileEventAt(serverID, body, snapshotAt)
+}
+
+func reconcileEventAt(serverID, body string, sentAtUnix int64) *conduitv1.PluginEvent {
+	return &conduitv1.PluginEvent{EventType: "channel.reconcile", ServerId: serverID, Body: body, SentAtUnix: sentAtUnix}
 }
 
 var telegramCfg = pluginConfig{Name: "telegram", Provider: domain.ProviderTelegram}
@@ -117,7 +133,7 @@ func TestReconcileDeletesVanishedTopicWithDependents(t *testing.T) {
 	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
 	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 
-	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	if len(got) != 1 || got[0] != "telegram:c1_topic_7" {
 		t.Fatalf("debería devolver solo el tema ausente, obtuve %v", got)
@@ -133,7 +149,7 @@ func TestReconcileKeepsTopicInLiveList(t *testing.T) {
 	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
 	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 
-	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1\nc1_topic_7"))
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1\nc1_topic_7"))
 
 	if len(got) != 0 {
 		t.Fatalf("no debería borrar nada, obtuve %v", got)
@@ -149,7 +165,7 @@ func TestReconcileLeavesOtherServersDMsAndParentUntouched(t *testing.T) {
 	f.addConv("telegram:c1", "telegram", "c1", "c1", true)                 // grupo padre
 	f.addConv("telegram:u99", "telegram", "u99", "", true)                 // DM / chat sin servidor
 
-	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	if len(got) != 1 || got[0] != "telegram:c1_topic_7" {
 		t.Fatalf("solo debería borrarse c1_topic_7, obtuve %v", got)
@@ -180,7 +196,7 @@ func TestReconcileRefusesEmptyInvalidOrMismatchedList(t *testing.T) {
 			f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
 			f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 
-			got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, ev)
+			got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, ev)
 
 			if len(got) != 0 {
 				t.Fatalf("no debería borrar nada, obtuve %v", got)
@@ -200,7 +216,7 @@ func TestReconcileLeavesOtherProviderUntouched(t *testing.T) {
 	// Otro plugin/proveedor con los mismos remote ids.
 	f.addConv("discord:c1_topic_7", "discord", "c1_topic_7", "c1", true)
 
-	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	if len(got) != 1 || got[0] != "telegram:c1_topic_7" {
 		t.Fatalf("solo debería borrarse el tema de telegram, obtuve %v", got)
@@ -223,7 +239,7 @@ func TestReconcileKeepsChannelRowsWithContactOrOtherAccount(t *testing.T) {
 		t.Fatalf("SaveChannel: %v", err)
 	}
 
-	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	if n := f.count(`SELECT COUNT(*) FROM conversations WHERE id = 'telegram:c1_topic_7'`); n != 0 {
 		t.Fatalf("la conversación debería borrarse")
@@ -240,7 +256,7 @@ func TestReconcilePublishesOneEventPerDeletedConversation(t *testing.T) {
 	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 	f.addConv("telegram:c1_topic_9", "telegram", "c1_topic_9", "c1", true)
 
-	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	evs := drainDeleted(sub)
 	if len(evs) != 2 {
@@ -265,10 +281,10 @@ func TestReconcileIsIdempotent(t *testing.T) {
 	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 	ev := reconcileEvent("c1", "c1_topic_1")
 
-	if got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, ev); len(got) != 1 {
+	if got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, ev); len(got) != 1 {
 		t.Fatalf("la primera pasada debería borrar 1, obtuve %v", got)
 	}
-	if got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, ev); len(got) != 0 {
+	if got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, ev); len(got) != 0 {
 		t.Fatalf("la segunda pasada no debería borrar nada, obtuve %v", got)
 	}
 	f.requireGone("telegram:c1_topic_7")
@@ -283,7 +299,7 @@ func TestReconcileNeverDeletesGeneralTopic(t *testing.T) {
 	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
 	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
 
-	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_7"))
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_7"))
 
 	f.requireIntact("telegram:c1_topic_1")
 	f.requireIntact("telegram:c1_topic_7")
@@ -314,7 +330,7 @@ func TestReconcileKeepsSharedChannelRowUsedByOtherPluginInstance(t *testing.T) {
 		}
 	}
 
-	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, reconcileEvent("c1", "c1_topic_1"))
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
 
 	if len(got) != 1 || got[0] != "telegram:c1_topic_7" {
 		t.Fatalf("solo debería borrarse la conversación de telegram, obtuve %v", got)
@@ -337,10 +353,195 @@ func TestReconcileKeepsSharedChannelRowUsedByOtherPluginInstance(t *testing.T) {
 
 	// Al reconciliar también la otra instancia, la fila ya no se usa y se borra.
 	other := pluginConfig{Name: "telegram2", Provider: domain.ProviderTelegram}
-	if got := handleChannelReconcile(f.ctx, f.db, f.bus, other, reconcileEvent("c1", "c1_topic_1")); len(got) != 1 {
+	if got := handleChannelReconcile(f.ctx, f.db, f.bus, other, f.media, reconcileEvent("c1", "c1_topic_1")); len(got) != 1 {
 		t.Fatalf("la segunda instancia debería borrar su conversación, obtuve %v", got)
 	}
 	if n := f.count(`SELECT COUNT(*) FROM contact_channels WHERE id = ?`, sharedChan); n != 0 {
 		t.Fatalf("sin conversaciones que la usen, la fila de canal debería borrarse, obtuve %d", n)
+	}
+}
+
+// --- T6: endurecimiento ---
+
+func TestReconcileSkipsTopicsActiveAfterSnapshot(t *testing.T) {
+	f := newReconcileFixture(t)
+	sub := f.bus.Subscribe(eventbus.EventConversationDeleted)
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConvAt("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true, time.Unix(1000, 0))       // anterior: se borra
+	f.addConvAt("telegram:c1_topic_8", "telegram", "c1_topic_8", "c1", true, time.Unix(1500, 0))       // exactamente en el snapshot: se borra
+	f.addConvAt("telegram:c1_topic_9", "telegram", "c1_topic_9", "c1", true, time.Unix(2001, 0))       // posterior: sobrevive
+	f.addConvAt("telegram:c1_topic_10", "telegram", "c1_topic_10", "c1", true, time.Unix(2000, 500e6)) // 0,5 s después: sobrevive
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEventAt("c1", "c1_topic_1", 1500))
+
+	if len(got) != 2 {
+		t.Fatalf("esperaba borrar topic_7 y topic_8, obtuve %v", got)
+	}
+	f.requireGone("telegram:c1_topic_7")
+	f.requireGone("telegram:c1_topic_8")
+	f.requireIntact("telegram:c1_topic_9")
+	f.requireIntact("telegram:c1_topic_10")
+	f.requireIntact("telegram:c1_topic_1")
+	if evs := drainDeleted(sub); len(evs) != 2 {
+		t.Fatalf("solo debería haber 2 eventos, obtuve %v", evs)
+	}
+}
+
+func TestReconcileRefusesMissingSnapshotTime(t *testing.T) {
+	for name, at := range map[string]int64{"cero": 0, "negativo": -5} {
+		t.Run(name, func(t *testing.T) {
+			f := newReconcileFixture(t)
+			sub := f.bus.Subscribe(eventbus.EventConversationDeleted)
+			f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+			f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
+
+			got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEventAt("c1", "c1_topic_1", at))
+
+			if len(got) != 0 {
+				t.Fatalf("sin hora de snapshot no debería borrar nada, obtuve %v", got)
+			}
+			f.requireIntact("telegram:c1_topic_1")
+			f.requireIntact("telegram:c1_topic_7")
+			if evs := drainDeleted(sub); len(evs) != 0 {
+				t.Fatalf("no debería publicar eventos, obtuve %v", evs)
+			}
+		})
+	}
+}
+
+// El prefijo `<plugin>:` se compara en caracteres, no en bytes: un nombre con tildes debe coincidir.
+func TestReconcileMatchesNonASCIIPluginName(t *testing.T) {
+	f := newReconcileFixture(t)
+	cfg := pluginConfig{Name: "telegrám", Provider: domain.ProviderTelegram}
+	f.addConv("telegrám:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConv("telegrám:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
+	f.addConv("telegram:c1_topic_7", "discord", "c1_topic_7", "c1", true) // otro plugin (canal propio): no se toca
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, cfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if len(got) != 1 || got[0] != "telegrám:c1_topic_7" {
+		t.Fatalf("debería borrar solo telegrám:c1_topic_7, obtuve %v", got)
+	}
+	f.requireGone("telegrám:c1_topic_7")
+	f.requireIntact("telegrám:c1_topic_1")
+	f.requireIntact("telegram:c1_topic_7")
+}
+
+// Despacho: el loop de eventos del plugin delega en routePluginEvent; el evento channel.reconcile
+// debe llegar al handler (borra) y otros tipos no deben consumirse.
+func TestRoutePluginEventDispatchesChannelReconcile(t *testing.T) {
+	f := newReconcileFixture(t)
+	sub := f.bus.Subscribe(eventbus.EventConversationDeleted)
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
+
+	if !routePluginEvent(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1")) {
+		t.Fatalf("channel.reconcile debería consumirse")
+	}
+	f.requireGone("telegram:c1_topic_7")
+	f.requireIntact("telegram:c1_topic_1")
+	if evs := drainDeleted(sub); len(evs) != 1 || evs[0].ConversationID != "telegram:c1_topic_7" || evs[0].ServerID != "c1" {
+		t.Fatalf("evento inesperado: %v", evs)
+	}
+
+	other := &conduitv1.PluginEvent{EventType: "message.received", ServerId: "c1", Body: "c1_topic_1"}
+	if routePluginEvent(f.ctx, f.db, f.bus, telegramCfg, f.media, other) {
+		t.Fatalf("otros tipos de evento no deben consumirse")
+	}
+}
+
+// --- media en disco ---
+
+func (f *reconcileFixture) setLocalPath(convID, path string) {
+	f.t.Helper()
+	p := path
+	if err := f.db.UpdateAttachmentDownload(f.ctx, "att-"+convID, domain.MediaCached, &p, 1); err != nil {
+		f.t.Fatalf("UpdateAttachmentDownload: %v", err)
+	}
+}
+
+func (f *reconcileFixture) writeFile(path string) {
+	f.t.Helper()
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		f.t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+func TestReconcileRemovesMediaFilesOfDeletedAttachmentsOnlyInsideMediaDir(t *testing.T) {
+	f := newReconcileFixture(t)
+	outside := t.TempDir()
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
+	f.addConv("telegram:c1_topic_8", "telegram", "c1_topic_8", "c1", true)
+	f.addConv("telegram:c1_topic_9", "telegram", "c1_topic_9", "c1", true)
+	f.addConv("telegram:c1_topic_11", "telegram", "c1_topic_11", "c1", true)
+
+	inside := filepath.Join(f.media, "7_foto.png")
+	outsideFile := filepath.Join(outside, "ajeno.png")
+	traversal := filepath.Join(f.media, "..", filepath.Base(outside), "traversal.png")
+	live := filepath.Join(f.media, "1_viva.png")
+	for _, p := range []string{inside, outsideFile, filepath.Join(outside, "traversal.png"), live} {
+		f.writeFile(p)
+	}
+	f.setLocalPath("telegram:c1_topic_7", inside)
+	f.setLocalPath("telegram:c1_topic_8", outsideFile)
+	f.setLocalPath("telegram:c1_topic_9", traversal)
+	f.setLocalPath("telegram:c1_topic_1", live)
+	f.setLocalPath("telegram:c1_topic_11", filepath.Join(f.media, "no_existe.png")) // archivo ya ausente
+
+	got := handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	if len(got) != 4 {
+		t.Fatalf("esperaba 4 temas borrados (7, 8, 9, 11), obtuve %v", got)
+	}
+	if fileExists(inside) {
+		t.Fatalf("el archivo dentro del directorio de media debería borrarse")
+	}
+	if !fileExists(outsideFile) {
+		t.Fatalf("un archivo fuera del directorio de media nunca debe borrarse")
+	}
+	if !fileExists(filepath.Join(outside, "traversal.png")) {
+		t.Fatalf("una ruta con .. que sale del directorio de media nunca debe borrarse")
+	}
+	if !fileExists(live) {
+		t.Fatalf("el archivo de un tema vivo no debe borrarse")
+	}
+}
+
+func TestReconcileKeepsMediaFileStillReferencedByOtherAttachment(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConv("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true)
+	shared := filepath.Join(f.media, "5_compartido.png")
+	f.writeFile(shared)
+	f.setLocalPath("telegram:c1_topic_7", shared)
+	f.setLocalPath("telegram:c1_topic_1", shared) // el tema vivo usa el mismo archivo
+
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	f.requireGone("telegram:c1_topic_7")
+	if !fileExists(shared) {
+		t.Fatalf("un archivo aún referenciado por otro adjunto no debe borrarse")
+	}
+}
+
+func TestReconcileKeepsMediaFilesWhenNothingIsDeleted(t *testing.T) {
+	f := newReconcileFixture(t)
+	f.addConv("telegram:c1_topic_1", "telegram", "c1_topic_1", "c1", true)
+	f.addConvAt("telegram:c1_topic_7", "telegram", "c1_topic_7", "c1", true, time.Unix(3000, 0)) // posterior al snapshot
+	file := filepath.Join(f.media, "7_foto.png")
+	f.writeFile(file)
+	f.setLocalPath("telegram:c1_topic_7", file)
+
+	handleChannelReconcile(f.ctx, f.db, f.bus, telegramCfg, f.media, reconcileEvent("c1", "c1_topic_1"))
+
+	f.requireIntact("telegram:c1_topic_7")
+	if !fileExists(file) {
+		t.Fatalf("el archivo de un tema que sobrevive no debe borrarse")
 	}
 }
