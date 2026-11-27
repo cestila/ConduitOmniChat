@@ -22,6 +22,10 @@ Scope: `conduit-plugin-telegram/` (separate git repo) and `ConduitOmniChat/core`
 
 - [x] **T6** (S2): Core hardening from review findings: snapshot freshness guard (`SentAtUnix` of `channel.reconcile` = time the live list was fetched; never delete a topic conversation with `last_message_at`/creation after it), non-ASCII plugin-name prefix match, dispatch test for the `channel.reconcile` case, StreamEvents `conversation.deleted` test, downloaded media files of deleted attachments | Route: writer (core) | Risk: item 1 (deletion rules) | Commit: `cb01d85` + `56364e7` (symlink-escape fix after independent verifier; native review approved, lineage `review-648e22bbd5f656c8`; loop `continue` finding checked: no code after the switch). Open non-blocking: stream test uses a 50 ms sleep (flaky risk), sub-second snapshot not tested, unreadable `last_message_at` retention not in CHANGELOG
 
+- [x] **T7** (S2): Core: retry the reconcile transaction on SQLite BUSY/BUSY_SNAPSHOT (517), 5 attempts — found in the live run, `busy_timeout` does not cover the deferred-to-write upgrade | Risk: item 1 (deletion robustness) | Commit: `ee80d2c`
+- [x] **T8** (S3): Core: also re-home a `group`-typed bare conversation when the server is provably a forum | Risk: item 1 | Commit: `5ad5b18`
+- [ ] **T9** (S3): Cosmetic: repair `parent_channel_id` = `<server>_topic_<n>` contamination on topic conversations | Risk: none | Commit: pending
+
 Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 and T4 each get their own commit for native review).
 
 ## Log
@@ -29,6 +33,7 @@ Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 an
 - **L1**: User request:
   > me esta pasando como que no hay una sincronizacion continua de los topicos de telegram, se borran en telegram pero en conduit no se sincronizan, ademas se estan creando topicos nuevos con el nombre del grupo
 - **L2**: User answer: "se borran, armame el plan y activa rdd para esta session o repocitorio"
+- **L7**: Live run on the installed data (backup `backup-prueba/conduit.db.20261127-160313`): 12 topics deleted for `c4308592267` (206 messages), 205 stranded messages re-homed to General (16 -> 221), `c1613217947` 392 messages re-homed (32 -> 424), totals 36726 -> 36552 messages; arithmetic closes exactly. Launcher on NixOS: `CONDUITD_PATH=../bin/conduitd nix run nixpkgs#electron -- .` (`npm start` fails: npm Electron needs system libglib).
 - **L6**: Delivery shape: 9 commits on `fix/telegram-topic-sync` in both repos, well past the 400-line review slice; push, PR and merge remain the user's decision.
 - **L5**: Deleted topics must be deleted and existing group-named forum conversations re-homed into General (T4/T5 added). Native review consent for the first T4 target was declined at the host.
 - **L4**: Native review of T2 returned non-blocking findings R3-001..R3-006 and R4-reconcile-snapshot-delete; the actionable ones became T6.
