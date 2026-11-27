@@ -28,8 +28,8 @@ Scope: `conduit-plugin-telegram/` (separate git repo) and `ConduitOmniChat/core`
 - [x] **T7** (S2): Core: retry the reconcile transaction on SQLite BUSY/BUSY_SNAPSHOT (517), 5 attempts — found in the live run, `busy_timeout` does not cover the deferred-to-write upgrade | Risk: item 1 (deletion robustness) | Commit: `ee80d2c`
 - [x] **T8** (S3): Core: also re-home a `group`-typed bare conversation when the server is provably a forum | Risk: item 1 | Commit: `5ad5b18`
 - [ ] **T9** (S3): Cosmetic: repair `parent_channel_id` = `<server>_topic_<n>` contamination on topic conversations | Risk: none | Commit: pending
-- [ ] **T10** (S4): Plugin: real topic titles, never invent `Tema N`, publish only when known, rename when known | Route: writer (plugin repo) | Risk: none | Commit: pending
-- [ ] **T11** (S4): Core: never title a `_topic_` conversation from the group name when `ChannelName` is empty | Route: writer (core) | Risk: none | Commit: pending
+- [x] **T10** (S4): Plugin: real topic titles, never invent `Tema N`, publish only when known, rename when known | Route: writer (plugin repo) | Risk: none | Commit: `a383c97` (plugin repo; assess medium, no review due)
+- [x] **T11** (S4): Core: never title a `_topic_` conversation from the group name when `ChannelName` is empty | Route: writer (core) | Risk: none | Commit: `c939c9c` (assess medium, no review due)
 
 Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 and T4 each get their own commit for native review).
 
@@ -38,6 +38,7 @@ Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 an
 - **L1**: User request:
   > me esta pasando como que no hay una sincronizacion continua de los topicos de telegram, se borran en telegram pero en conduit no se sincronizan, ademas se estan creando topicos nuevos con el nombre del grupo
 - **L2**: User answer: "se borran, armame el plan y activa rdd para esta session o repocitorio"
+- **L9**: Result on live data: 0 conversations left with a `Tema N` title (e.g. `_topic_122` is now "girs"); topic count and message counts unchanged by the restart (c4308592267 12/1139/221 General, c1613217947 8/835/424, total 36565 messages).
 - **L8**: User request:
   > bueno ahora veo topic nombrados como "Tema 122" y asi varios pero en la aplicacion de telegran respeta el nombre del topic como podemos hacer para arreglar que no me genere este tipo de topic y que si en algun momento toma el nombre que lo aplique
 - **L7**: Live run on the installed data (backup `backup-prueba/conduit.db.20261127-160313`): 12 topics deleted for `c4308592267` (206 messages), 205 stranded messages re-homed to General (16 -> 221), `c1613217947` 392 messages re-homed (32 -> 424), totals 36726 -> 36552 messages; arithmetic closes exactly. Launcher on NixOS: `CONDUITD_PATH=../bin/conduitd nix run nixpkgs#electron -- .` (`npm start` fails: npm Electron needs system libglib).
