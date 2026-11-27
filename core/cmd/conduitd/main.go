@@ -336,6 +336,10 @@ func main() {
 					}
 					_ = db.EnsureConversation(context.Background(), conv)
 
+				case "channel.reconcile":
+					// Lista viva de temas de un foro: se borran los temas locales que ya no existen.
+					handleChannelReconcile(context.Background(), db, bus, plugCfg, ev)
+
 				case "message.received", "message.sent", "messages.read", "message.reaction", "message.poll_update", "message.edited", "message.deleted", "message.pinned":
 					// Una lectura nunca crea ni reordena: se resuelve aparte contra lo existente.
 					if ev.EventType == "messages.read" {

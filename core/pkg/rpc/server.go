@@ -535,6 +535,7 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	subContact := s.bus.Subscribe(eventbus.EventContactUpdated)
 	subStatus := s.bus.Subscribe(eventbus.EventMessageStatus)
 	subChannel := s.bus.Subscribe(eventbus.EventChannelConnected)
+	subConvDeleted := s.bus.Subscribe(eventbus.EventConversationDeleted)
 	defer s.bus.Unsubscribe(eventbus.EventMessageReceived, subReceived)
 	defer s.bus.Unsubscribe(eventbus.EventMessageSent, subSent)
 	defer s.bus.Unsubscribe(eventbus.EventMessageUpdated, subUpdated)
@@ -544,6 +545,7 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 	defer s.bus.Unsubscribe(eventbus.EventContactUpdated, subContact)
 	defer s.bus.Unsubscribe(eventbus.EventMessageStatus, subStatus)
 	defer s.bus.Unsubscribe(eventbus.EventChannelConnected, subChannel)
+	defer s.bus.Unsubscribe(eventbus.EventConversationDeleted, subConvDeleted)
 
 	for {
 		select {
@@ -659,6 +661,25 @@ func (s *Server) StreamEvents(req *conduitv1.StreamEventsRequest, stream conduit
 					TimestampUnix: ev.Timestamp.Unix(),
 					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
 						ChannelStatusUpdate: msg,
+					},
+				})
+				if err != nil {
+					return err
+				}
+			}
+		case ev := <-subConvDeleted:
+			// Se transporta por el campo genérico channel_status_update (sin cambiar el proto):
+			// Type = "conversation.deleted" y el payload es el JSON de eventbus.ConversationDeleted.
+			if deleted, ok := ev.Payload.(eventbus.ConversationDeleted); ok {
+				raw, err := json.Marshal(deleted)
+				if err != nil {
+					continue
+				}
+				err = stream.Send(&conduitv1.EventEnvelope{
+					Type:          string(ev.Type),
+					TimestampUnix: ev.Timestamp.Unix(),
+					Payload: &conduitv1.EventEnvelope_ChannelStatusUpdate{
+						ChannelStatusUpdate: string(raw),
 					},
 				})
 				if err != nil {
