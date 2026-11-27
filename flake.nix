@@ -11,7 +11,11 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        version = "0.3.0";
+        # Versión y hashes de los binarios precompilados: los mantiene el job
+        # `nix-hashes` de .github/workflows/release.yml, nunca a mano.
+        binaries = import ./binaries.nix;
+
+        version = binaries.version;
 
         # -------------------------------------------------------------
         # 1. Official Precompiled Binary Release (Default)
@@ -22,7 +26,7 @@
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-            hash = "sha256-jkhQckwoymQ7gg+19FzzQofD8ZyTSc96DIEiD49lM84=";
+            hash = binaries.appImageHash;
           };
 
           extraPkgs = p: [ ];
@@ -47,7 +51,7 @@ DESKTOP
               inherit version;
               src = pkgs.fetchurl {
                 url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/Conduit-${version}.AppImage";
-                hash = "sha256-jkhQckwoymQ7gg+19FzzQofD8ZyTSc96DIEiD49lM84=";
+                hash = binaries.appImageHash;
               };
             }}/usr/share/icons/hicolor/256x256/apps/conduit-gui.png $out/share/icons/hicolor/256x256/apps/
           '';
@@ -67,7 +71,7 @@ DESKTOP
 
           src = pkgs.fetchurl {
             url = "https://github.com/cestila/ConduitOmniChat/releases/download/v${version}/conduitd_${version}_linux_amd64.tar.gz";
-            hash = "sha256-YEaCB+l2ZCf01r0h+dPfSRkX1GlmOgGTMJaLMWzT4Qs=";
+            hash = binaries.conduitdHash;
           };
 
           sourceRoot = ".";

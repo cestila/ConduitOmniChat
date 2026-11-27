@@ -82,3 +82,73 @@ jobs:
             gui/dist/*.tar.gz
             gui/dist/*.exe
             gui/dist/latest*.yml
+
+  # Mantiene binaries.nix al día: recalcula el hash de los artefactos recién
+  # publicados y abre el PR de bump, así ningún release necesita trabajo manual.
+  # El SRI se calcula con openssl (sha256 + base64), el mismo valor que
+  # `nix-prefetch-url --type sha256 | nix hash convert --to sri`, sin instalar Nix.
+  nix-hashes:
+    needs: [goreleaser, electron]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: rewrite binaries.nix from the published assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+
+          sri() {
+            curl -fsSL --retry 3 --retry-delay 2 -o "$2" "$1"
+            echo "sha256-$(openssl dgst -sha256 -binary "$2" | openssl base64 -A)"
+          }
+
+          APP_IMAGE=$(sri "${BASE}/Conduit-${VERSION}.AppImage" /tmp/appimage)
+          CONDUITD=$(sri "${BASE}/conduitd_${VERSION}_linux_amd64.tar.gz" /tmp/conduitd.tgz)
+
+          python3 - "$VERSION" "$APP_IMAGE" "$CONDUITD" <<'PY'
+          import re
+          import sys
+
+          version, app_image, conduitd = sys.argv[1:4]
+          path = "binaries.nix"
+          with open(path, encoding="utf-8") as handle:
+              content = handle.read()
+
+          replacements = {
+              "version": version,
+              "appImageHash": app_image,
+              "conduitdHash": conduitd,
+          }
+          for key, value in replacements.items():
+              pattern = rf'{key} = "[^"]*";'
+              content, count = re.subn(pattern, f'{key} = "{value}";', content, count=1)
+              if count != 1:
+                  sys.exit(f"binaries.nix: no se pudo reemplazar {key}")
+
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(content)
+          PY
+
+          git diff --stat
+      - name: open the bump pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/nix-${{ github.ref_name }}
+          base: main
+          delete-branch: true
+          title: "chore(nix): update precompiled release binaries to ${{ github.ref_name }}"
+          commit-message: "chore(nix): update precompiled release binaries to ${{ github.ref_name }}"
+          body: |
+            Actualiza `binaries.nix` a `${{ github.ref_name }}` con los hashes de los
+            artefactos publicados por este release. Lo generó el job `nix-hashes` de
+            `.github/workflows/release.yml`; no editar a mano.
+
+            Sin cambios de código: sólo versión y hashes SRI del AppImage y del
+            tarball de `conduitd`.
