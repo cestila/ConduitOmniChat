@@ -12,6 +12,9 @@ Scope: `conduit-plugin-telegram/` (separate git repo) and `ConduitOmniChat/core`
 - **S3**: "se estan creando topicos nuevos con el nombre del grupo"
   - In a forum, a message whose topic cannot be resolved goes to General (topic 1), never to a channel named after the group. The forum parent is not published as a channel when topic sync fails or returns nothing. `GetDialogs` is paginated so forums beyond the first 100 dialogs get their topics. Existing group-named forum conversations are re-homed into General (messages moved) and removed.
 
+- **S4**: "ahora veo topic nombrados como "Tema 122" y asi varios pero en la aplicacion de telegran respeta el nombre del topic como podemos hacer para arreglar que no me genere este tipo de topic y que si en algun momento toma el nombre que lo aplique"
+  - The plugin never publishes a placeholder name (`Tema N`): it resolves the real topic title from the `messages.getForumTopics` response (topic create/edit service message) and, when that is missing, from the topic's top message. A topic whose name is still unknown is not published at all (so no bogus conversation is created) but stays in the reconcile live list so it is never deleted; as soon as the name is known it is published and the existing conversation is renamed. The core never titles a `_topic_` conversation with the group name when `ChannelName` is empty.
+
 ## Tasks
 
 - [x] **T1** (S3): Plugin: unresolved forum messages go to General; no parent `channel.sync` for forums; paginate `GetDialogs` | Route: writer (plugin repo) | Risk: none | Commit: `55e0879` (plugin repo; 423 lines, slightly over the 400-line slice; go test/vet clean, RED observed)
@@ -25,6 +28,8 @@ Scope: `conduit-plugin-telegram/` (separate git repo) and `ConduitOmniChat/core`
 - [x] **T7** (S2): Core: retry the reconcile transaction on SQLite BUSY/BUSY_SNAPSHOT (517), 5 attempts — found in the live run, `busy_timeout` does not cover the deferred-to-write upgrade | Risk: item 1 (deletion robustness) | Commit: `ee80d2c`
 - [x] **T8** (S3): Core: also re-home a `group`-typed bare conversation when the server is provably a forum | Risk: item 1 | Commit: `5ad5b18`
 - [ ] **T9** (S3): Cosmetic: repair `parent_channel_id` = `<server>_topic_<n>` contamination on topic conversations | Risk: none | Commit: pending
+- [ ] **T10** (S4): Plugin: real topic titles, never invent `Tema N`, publish only when known, rename when known | Route: writer (plugin repo) | Risk: none | Commit: pending
+- [ ] **T11** (S4): Core: never title a `_topic_` conversation from the group name when `ChannelName` is empty | Route: writer (core) | Risk: none | Commit: pending
 
 Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 and T4 each get their own commit for native review).
 
@@ -33,6 +38,8 @@ Order: T1 -> T2 -> T6 -> T3 -> T4 -> T5 (T2 defines the contract T3 emits; T2 an
 - **L1**: User request:
   > me esta pasando como que no hay una sincronizacion continua de los topicos de telegram, se borran en telegram pero en conduit no se sincronizan, ademas se estan creando topicos nuevos con el nombre del grupo
 - **L2**: User answer: "se borran, armame el plan y activa rdd para esta session o repocitorio"
+- **L8**: User request:
+  > bueno ahora veo topic nombrados como "Tema 122" y asi varios pero en la aplicacion de telegran respeta el nombre del topic como podemos hacer para arreglar que no me genere este tipo de topic y que si en algun momento toma el nombre que lo aplique
 - **L7**: Live run on the installed data (backup `backup-prueba/conduit.db.20261127-160313`): 12 topics deleted for `c4308592267` (206 messages), 205 stranded messages re-homed to General (16 -> 221), `c1613217947` 392 messages re-homed (32 -> 424), totals 36726 -> 36552 messages; arithmetic closes exactly. Launcher on NixOS: `CONDUITD_PATH=../bin/conduitd nix run nixpkgs#electron -- .` (`npm start` fails: npm Electron needs system libglib).
 - **L6**: Delivery shape: 9 commits on `fix/telegram-topic-sync` in both repos, well past the 400-line review slice; push, PR and merge remain the user's decision.
 - **L5**: Deleted topics must be deleted and existing group-named forum conversations re-homed into General (T4/T5 added). Native review consent for the first T4 target was declined at the host.
