@@ -103,10 +103,12 @@ func removeMediaFiles(mediaDir string, paths []string) {
 	}
 }
 
-// handleChannelReconcile aplica un evento channel.reconcile: borra las conversaciones de tema
-// de ese servidor que ya no existen en el proveedor (salvo las posteriores al snapshot,
+// handleChannelReconcile aplica un evento channel.reconcile sobre un foro: primero reubica en el tema
+// General los pseudo temas con nombre de grupo que dejó el fallback antiguo del plugin, después borra
+// las conversaciones de tema que ya no existen en el proveedor (salvo las posteriores al snapshot,
 // ev.SentAtUnix) y sus archivos de media dentro de mediaDir, y avisa a los clientes. Devuelve los ids
-// de conversación borrados. Ante una lista inválida o sin SentAtUnix no hace nada.
+// de conversación eliminados (incluidos los reubicados, cuya fila desaparece). Ante una lista inválida
+// o sin SentAtUnix no hace nada.
 func handleChannelReconcile(ctx context.Context, db *storage.DB, bus *eventbus.Bus, plugCfg pluginConfig, mediaDir string, ev *conduitv1.PluginEvent) []string {
 	serverID := ev.ServerId
 	if ev.SentAtUnix <= 0 {
@@ -124,8 +126,10 @@ func handleChannelReconcile(ctx context.Context, db *storage.DB, bus *eventbus.B
 		n, valid := topicNumber(serverID, remoteID)
 		return valid && n != 1
 	}
-	res, err := db.DeleteConversationsAbsentFrom(ctx, plugCfg.Name+":", string(plugCfg.Provider), serverID, time.Unix(ev.SentAtUnix, 0), isCandidate, live)
-	deleted := res.DeletedIDs
+	// Reubicar los pseudo temas con nombre de grupo y borrar los temas ausentes van en la misma
+	// transacción: o se aplican los dos pasos, o no se toca nada.
+	res, err := db.ReconcileForumTopics(ctx, plugCfg.Name+":", string(plugCfg.Provider), serverID, time.Unix(ev.SentAtUnix, 0), isCandidate, live)
+	deleted := append(append([]string{}, res.DeletedIDs...), res.RehomedIDs...)
 	if err != nil {
 		log.Printf("⚠️ channel.reconcile de %s (%s): error borrando temas: %v", plugCfg.Name, serverID, err)
 		return nil
@@ -134,8 +138,11 @@ func handleChannelReconcile(ctx context.Context, db *storage.DB, bus *eventbus.B
 	for _, convID := range deleted {
 		bus.Publish(eventbus.EventConversationDeleted, eventbus.ConversationDeleted{ConversationID: convID, ServerID: serverID})
 	}
-	if len(deleted) > 0 {
-		log.Printf("🧹 channel.reconcile %s/%s: %d tema(s) eliminados", plugCfg.Name, serverID, len(deleted))
+	if len(res.RehomedIDs) > 0 {
+		log.Printf("🔧 channel.reconcile %s/%s: %d conversación(es) con nombre de grupo movidas a General", plugCfg.Name, serverID, len(res.RehomedIDs))
+	}
+	if len(res.DeletedIDs) > 0 {
+		log.Printf("🧹 channel.reconcile %s/%s: %d tema(s) eliminados", plugCfg.Name, serverID, len(res.DeletedIDs))
 	}
 	return deleted
 }
