@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"modernc.org/sqlite"
 )
 
 // ReconcileResult describe lo que borró DeleteConversationsAbsentFrom o ReconcileForumTopics.
@@ -22,6 +24,60 @@ type ReconcileResult struct {
 
 // generalTopicSuffix forma el remote id del tema General de un foro.
 const generalTopicSuffix = "_topic_1"
+
+const (
+	// reconcileRetryAttempts es el tope de intentos de una transacción de reconciliación.
+	reconcileRetryAttempts = 5
+	// reconcileRetryBaseDelay es la espera del primer reintento; se duplica en cada uno de los
+	// siguientes (20, 40, 80, 160 ms).
+	reconcileRetryBaseDelay = 20 * time.Millisecond
+	// Códigos base de SQLite: el código extendido de busy/locked comparte estos bits bajos.
+	sqliteCodeBusy   = 5
+	sqliteCodeLocked = 6
+)
+
+// reconcileRetrySleep es el hook de espera entre reintentos; los tests lo reemplazan para no
+// dormir. No se exporta para no ampliar la superficie pública del paquete.
+var reconcileRetrySleep = func(d time.Duration) { time.Sleep(d) }
+
+// isBusyErr informa si err es un error de base bloqueada de SQLite (BUSY o LOCKED, incluido el
+// código extendido SQLITE_BUSY_SNAPSHOT = 517 que aparece cuando otra conexión confirmó entre
+// las lecturas y las escrituras de esta transacción).
+func isBusyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		switch se.Code() & 0xff {
+		case sqliteCodeBusy, sqliteCodeLocked:
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "sqlite_busy") ||
+		strings.Contains(msg, "sqlite_locked")
+}
+
+// retryOnBusy ejecuta op reintentando, con una transacción nueva por intento (es op quien la
+// abre), solo cuando falla por base bloqueada. Un error distinto se devuelve de inmediato.
+func retryOnBusy(ctx context.Context, op func() error) error {
+	var err error
+	for attempt := 0; attempt < reconcileRetryAttempts; attempt++ {
+		if attempt > 0 {
+			reconcileRetrySleep(reconcileRetryBaseDelay << (attempt - 1))
+		}
+		if err = op(); err == nil {
+			return nil
+		}
+		if !isBusyErr(err) {
+			return err
+		}
+	}
+	return err
+}
 
 // generalTopicTitle es el título del tema General de un foro.
 const generalTopicTitle = "General"
@@ -54,6 +110,24 @@ func (d *DB) reconcileForumTopics(ctx context.Context, convPrefix, provider, ser
 	if snapshotAt.IsZero() || snapshotAt.Unix() <= 0 {
 		return ReconcileResult{}, errors.New("hora del snapshot ausente: no es seguro borrar")
 	}
+	var res ReconcileResult
+	err := retryOnBusy(ctx, func() error {
+		r, err := d.reconcileForumTopicsOnce(ctx, convPrefix, provider, serverID, snapshotAt, isCandidate, keep, rehome)
+		if err != nil {
+			return err
+		}
+		res = r
+		return nil
+	})
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	return res, nil
+}
+
+// reconcileForumTopicsOnce hace un intento completo de la reconciliación en una transacción
+// propia: la operación es idempotente, así que el llamador puede repetirla desde cero.
+func (d *DB) reconcileForumTopicsOnce(ctx context.Context, convPrefix, provider, serverID string, snapshotAt time.Time, isCandidate func(remoteID string) bool, keep map[string]bool, rehome bool) (ReconcileResult, error) {
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return ReconcileResult{}, err

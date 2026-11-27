@@ -21,6 +21,7 @@ listed under an **SDK** heading inside each version.
 
 ### Fixed
 
+- `channel.reconcile` retries the whole deletion transaction when SQLite reports the database as busy or locked (including `SQLITE_BUSY_SNAPSHOT`, code 517, which `busy_timeout` does not cover when another connection commits between the reads and the writes of the transaction): up to 5 attempts with a short backoff, so deleted topics are still pruned while the history catch-up is writing right after connect.
 - `channel.reconcile` now also repairs forum conversations that the old plugin fallback had created with the group's own name (id `<plugin>:<server_id>`, `channel_type` `forum`, no parent): their messages are moved to the General topic (`<plugin>:<server_id>_topic_1`, created if missing) and the old conversation row is removed, in the same transaction as the deleted topics.
 
 ## [0.2.1] - 2026-11-19
