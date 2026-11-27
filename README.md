@@ -17,7 +17,9 @@ installed on demand from GitHub Releases.
 - Replies/quotes, reactions, polls, buttons, edit, delete and pin, read
   receipts, media (attachments, voice notes) and forwarding, where the network
   and plugin support them (each plugin lists its `capabilities` in its manifest).
-- Telegram forum topics.
+- Telegram forum topics, kept in sync with the provider: topics deleted in
+  Telegram disappear from the inbox (with their open message pane cleared)
+  without restarting the app.
 - Plugins describe their own UI as data (credential forms, QR instructions,
   colors, icons): the desktop app has no per-network code.
 - Plugins are separate executables installed from GitHub Releases with

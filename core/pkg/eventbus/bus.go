@@ -20,7 +20,16 @@ const (
 	EventChannelError     EventType = "channel.error"
 	EventSyncProgress     EventType = "sync.progress"
 	EventConversationRead EventType = "conversation.read"
+	// EventConversationDeleted emits a ConversationDeleted payload when a conversation
+	// is removed locally (for example a Telegram forum topic deleted remotely).
+	EventConversationDeleted EventType = "conversation.deleted"
 )
+
+// ConversationDeleted is the payload of EventConversationDeleted.
+type ConversationDeleted struct {
+	ConversationID string `json:"conversation_id"`
+	ServerID       string `json:"server_id"`
+}
 
 // Event representa la envoltura de cualquier evento en el bus.
 type Event struct {

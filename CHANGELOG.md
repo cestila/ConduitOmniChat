@@ -14,6 +14,17 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+### Added
+
+- Plugin event `channel.reconcile` (`ServerId` = forum remote id, `Body` = newline-separated live topic remote ids `<ServerId>_topic_<N>`, `SentAtUnix` = unix time at which the live topic list was fetched; **required**): the core deletes local topic conversations of that server that are no longer in the list (with their messages, attachments, reactions, orphan channel row and the downloaded media files of those attachments inside the Conduit media directory). A topic conversation whose last activity is after `SentAtUnix` is never deleted, and an event without `SentAtUnix` is ignored. Empty, invalid or mismatched lists are ignored; the General topic, DMs, parent groups and other servers/providers are never touched.
+- `conversation.deleted` event on the `StreamEvents` stream (carried in `channel_status_update` as JSON `{"conversation_id","server_id"}`) so clients can refresh when a conversation is removed.
+
+### Fixed
+
+- A `channel.sync` event for a forum topic (`<server>_topic_<N>` or `channel_type` `forum`) without a real topic name (empty `ChannelName`) no longer titles that conversation with the group name: an existing conversation keeps its title and no new one is created until the name is known (a single informational log line, no error). Non-topic channels and groups keep falling back to `SenderName` exactly as before.
+- `channel.reconcile` retries the whole deletion transaction when SQLite reports the database as busy or locked (including `SQLITE_BUSY_SNAPSHOT`, code 517, which `busy_timeout` does not cover when another connection commits between the reads and the writes of the transaction): up to 5 attempts with a short backoff, so deleted topics are still pruned while the history catch-up is writing right after connect.
+- `channel.reconcile` now also repairs forum conversations that the old plugin fallback had created with the group's own name (id `<plugin>:<server_id>`, `channel_type` `forum`, no parent): their messages are moved to the General topic (`<plugin>:<server_id>_topic_1`, created if missing) and the old conversation row is removed, in the same transaction as the deleted topics. A conversation of that shape stored with `channel_type` `group` is repaired too, but only when the same server is provably a forum (it has topic conversations of its own, by id `<plugin>:<server_id>_topic_<N>` or by `parent_channel_id` = `<server_id>`); basic groups without topics, DMs and other servers or providers are never touched.
+
 ## [0.2.1] - 2026-11-19
 
 ### Changed
