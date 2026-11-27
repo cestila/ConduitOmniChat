@@ -25,7 +25,12 @@ This document describes how `ConduitOmniChat` and the standalone plugin reposito
    ```
    - The `vX.Y.Z` tag triggers the release workflow to build and publish `conduitd` and the desktop app.
    - Because `sdk/` lives in a subdirectory, Go requires the `sdk/vX.Y.Z` tag.
-3. If `sdk/` was tagged, wait until the Go module proxy serves the new version before updating plugins:
+3. The release workflow also keeps `binaries.nix` current: its `nix-hashes` job downloads the
+   published `Conduit-X.Y.Z.AppImage` and `conduitd_X.Y.Z_linux_amd64.tar.gz`, recalculates their
+   hashes and opens `chore(nix): update precompiled release binaries to vX.Y.Z`. Merge that PR
+   (CI only, no code) so `nix run github:cestila/ConduitOmniChat` serves the new binaries. Nothing
+   in `flake.nix` needs editing by hand, and the flake reads version and hashes from `binaries.nix`.
+4. If `sdk/` was tagged, wait until the Go module proxy serves the new version before updating plugins:
    ```sh
    GOPROXY=https://proxy.golang.org go list -m github.com/cestila/ConduitOmniChat/sdk@vX.Y.Z
    ```
