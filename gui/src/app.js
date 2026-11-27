@@ -3362,10 +3362,84 @@ function scheduleActiveConversationRender() {
   }, 200);
 }
 
+// Un tema de foro borrado en el proveedor llega por StreamEvents como
+// Type = "conversation.deleted" con el JSON de eventbus.ConversationDeleted en
+// el campo genérico channel_status_update. Devuelve null si el payload no sirve.
+function parseConversationDeleted(rawPayload) {
+  if (typeof rawPayload !== 'string' || !rawPayload.trim()) return null;
+  let payload;
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch (e) {
+    return null;
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const conversationId = payload.conversation_id;
+  if (typeof conversationId !== 'string' || !conversationId.trim()) return null;
+  return {
+    conversationId,
+    serverId: typeof payload.server_id === 'string' ? payload.server_id : ''
+  };
+}
+
+// Limpia el panel de chat cuando su conversación dejó de existir.
+function renderDeletedConversationState() {
+  el.messagesContainer.innerHTML = '';
+  el.messagesContainer.innerHTML = `
+    <div class="empty-conversation-state">
+      <i class="fa-regular fa-comment-slash empty-icon"></i>
+      <h3>Conversación eliminada</h3>
+      <p>Este chat ya no existe: se eliminó en el proveedor.</p>
+    </div>`;
+  if (el.activeChatTitle) el.activeChatTitle.textContent = 'Selecciona un chat';
+  if (el.activeChatSubtitle) el.activeChatSubtitle.textContent = '';
+  updatePinnedBanner();
+}
+
+// Sincroniza la GUI cuando el core avisa que una conversación local ya no existe
+// (por ejemplo un tema de foro de Telegram borrado en el proveedor).
+function handleConversationDeleted(rawPayload) {
+  const payload = parseConversationDeleted(rawPayload);
+  if (!payload) {
+    console.warn('Evento conversation.deleted ignorado: payload inválido.');
+    return false;
+  }
+
+  const idx = state.conversations.findIndex(c => c.id === payload.conversationId);
+  if (idx < 0) {
+    return false; // No anunciado en esta sesión: no se toca ninguna otra conversación.
+  }
+
+  state.conversations.splice(idx, 1);
+  if (state.messageCache) state.messageCache.delete(payload.conversationId);
+  if (state.pinnedMessages) state.pinnedMessages.delete(payload.conversationId);
+
+  if (state.activeConversationId === payload.conversationId) {
+    state.activeConversationId = null;
+    if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
+      localStorage.removeItem('conduit_active_conversation_id');
+    }
+    hasReachedOldestMessage = false;
+    unreadBelowCount = 0;
+    updateScrollBottomButton();
+    renderDeletedConversationState();
+  }
+
+  renderConversations();
+  updateActiveConversationVisual();
+  return true;
+}
+
 // Manejador de eventos en tiempo real gRPC
 function setupRealtimeEvents() {
   window.conduitAPI.onEvent((envelope) => {
     console.log('Evento gRPC recibido:', envelope);
+    // Conversación eliminada localmente (tema de foro borrado en el proveedor).
+    // Se evalúa antes que channel_status_update porque comparte ese campo.
+    if (envelope.type === 'conversation.deleted') {
+      handleConversationDeleted(envelope.channel_status_update);
+      return;
+    }
     if (envelope.channel_status_update && envelope.type !== 'sync.progress') {
       const statusText = String(envelope.channel_status_update);
       checkDaemonStatus();
