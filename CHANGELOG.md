@@ -14,6 +14,8 @@ listed under an **SDK** heading inside each version.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-27
+
 ### Added
 
 - Plugin event `channel.reconcile` (`ServerId` = forum remote id, `Body` = newline-separated live topic remote ids `<ServerId>_topic_<N>`, `SentAtUnix` = unix time at which the live topic list was fetched; **required**): the core deletes local topic conversations of that server that are no longer in the list (with their messages, attachments, reactions, orphan channel row and the downloaded media files of those attachments inside the Conduit media directory). A topic conversation whose last activity is after `SentAtUnix` is never deleted, and an event without `SentAtUnix` is ignored. Empty, invalid or mismatched lists are ignored; the General topic, DMs, parent groups and other servers/providers are never touched.
@@ -118,7 +120,8 @@ First public release. SDK: `sdk/v0.1.0`.
   `sdk/conduitv1` and `sdk/pluginsdk` (`Serve`, `HandshakeConfig`,
   `ValidateManifest`). Plugin protocol version 1.
 
-[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cestila/ConduitOmniChat/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/cestila/ConduitOmniChat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/cestila/ConduitOmniChat/compare/v0.1.1...v0.1.2
