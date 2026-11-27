@@ -293,51 +293,7 @@ func main() {
 
 				case "channel.sync":
 					// Sincronización de canales de servidores, supergrupos y foros jerárquicos
-					channelTitle := ev.ChannelName
-					if channelTitle == "" {
-						channelTitle = ev.SenderName
-					}
-					convID := fmt.Sprintf("%s:%s", plugCfg.Name, ev.RemoteSenderId)
-					channelID := uuid.New().String()
-					existingChan, _ := db.GetChannelByProviderAndRemoteID(context.Background(), string(plugCfg.Provider), ev.RemoteSenderId)
-					if existingChan != nil {
-						channelID = existingChan.ID
-					} else {
-						_ = db.SaveChannel(context.Background(), &domain.ContactChannel{
-							ID:          channelID,
-							ContactID:   "",
-							Provider:    plugCfg.Provider,
-							RemoteID:    ev.RemoteSenderId,
-							Handle:      channelTitle,
-							IsPreferred: true,
-						})
-					}
-
-					// El orden lo dicta el servidor: se respeta la posición ya asignada y se
-					// calcula una nueva solo si el canal no la tiene (nuevo o base anterior).
-					position := channelPositionFor(context.Background(), db, convID, ev.ServerId)
-
-					convServerID := ev.ServerId
-					convParentID := ev.ParentChannelId
-					if strings.Contains(ev.RemoteSenderId, "_topic_") {
-						convServerID = extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
-						convParentID = extractTopicServerID(ev.RemoteSenderId, ev.ParentChannelId)
-					}
-
-					conv := &domain.Conversation{
-						ID:              convID,
-						ContactID:       nil,
-						IsGroup:         true,
-						Title:           channelTitle,
-						LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
-						ActiveChannelID: &channelID,
-						ServerID:        convServerID,
-						ServerName:      ev.ServerName,
-						ParentChannelID: convParentID,
-						ChannelType:     ev.ChannelType,
-						Position:        position,
-					}
-					_ = db.EnsureConversation(context.Background(), conv)
+					handleChannelSync(context.Background(), db, plugCfg, ev)
 
 				case "message.received", "message.sent", "messages.read", "message.reaction", "message.poll_update", "message.edited", "message.deleted", "message.pinned":
 					// Una lectura nunca crea ni reordena: se resuelve aparte contra lo existente.
@@ -811,6 +767,73 @@ func extractTopicServerID(remoteID, explicitServerID string) string {
 		return remoteID[:idx]
 	}
 	return remoteID
+}
+
+// isForumTopicTarget reports whether a channel.sync event describes a forum topic
+// (a `<serverID>_topic_<N>` identifier or metadata marking a forum child).
+func isForumTopicTarget(ev *conduitv1.PluginEvent) bool {
+	return strings.Contains(ev.RemoteSenderId, topicMarker) ||
+		strings.Contains(ev.ParentChannelId, topicMarker) ||
+		strings.EqualFold(ev.ChannelType, "forum")
+}
+
+// handleChannelSync sincroniza un canal, supergrupo o tema de foro anunciado por el plugin.
+func handleChannelSync(ctx context.Context, db *storage.DB, plugCfg pluginConfig, ev *conduitv1.PluginEvent) {
+	channelTitle := ev.ChannelName
+	convID := fmt.Sprintf("%s:%s", plugCfg.Name, ev.RemoteSenderId)
+	if channelTitle == "" {
+		if isForumTopicTarget(ev) {
+			// Un tema nunca toma el nombre del grupo: si el plugin todavía no conoce
+			// el nombre real se conserva el título existente y, si la conversación no
+			// existe, no se crea con un nombre inventado.
+			if existingConv, err := db.GetConversationByID(ctx, convID); err != nil || existingConv == nil {
+				log.Printf("⏭️ channel.sync %s/%s: tema sin nombre conocido, no se crea conversación", plugCfg.Name, ev.RemoteSenderId)
+				return
+			}
+		} else {
+			channelTitle = ev.SenderName
+		}
+	}
+	channelID := uuid.New().String()
+	existingChan, _ := db.GetChannelByProviderAndRemoteID(ctx, string(plugCfg.Provider), ev.RemoteSenderId)
+	if existingChan != nil {
+		channelID = existingChan.ID
+	} else {
+		_ = db.SaveChannel(ctx, &domain.ContactChannel{
+			ID:          channelID,
+			ContactID:   "",
+			Provider:    plugCfg.Provider,
+			RemoteID:    ev.RemoteSenderId,
+			Handle:      channelTitle,
+			IsPreferred: true,
+		})
+	}
+
+	// El orden lo dicta el servidor: se respeta la posición ya asignada y se
+	// calcula una nueva solo si el canal no la tiene (nuevo o base anterior).
+	position := channelPositionFor(ctx, db, convID, ev.ServerId)
+
+	convServerID := ev.ServerId
+	convParentID := ev.ParentChannelId
+	if strings.Contains(ev.RemoteSenderId, "_topic_") {
+		convServerID = extractTopicServerID(ev.RemoteSenderId, ev.ServerId)
+		convParentID = extractTopicServerID(ev.RemoteSenderId, ev.ParentChannelId)
+	}
+
+	conv := &domain.Conversation{
+		ID:              convID,
+		ContactID:       nil,
+		IsGroup:         true,
+		Title:           channelTitle,
+		LastMessageAt:   time.Unix(ev.SentAtUnix, 0),
+		ActiveChannelID: &channelID,
+		ServerID:        convServerID,
+		ServerName:      ev.ServerName,
+		ParentChannelID: convParentID,
+		ChannelType:     ev.ChannelType,
+		Position:        position,
+	}
+	_ = db.EnsureConversation(ctx, conv)
 }
 
 func probeTUIVersion(baseDir string) string {
